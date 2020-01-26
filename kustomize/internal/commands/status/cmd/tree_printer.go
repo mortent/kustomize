@@ -1,0 +1,319 @@
+package cmd
+
+import (
+	"fmt"
+	"github.com/acarl005/stripansi"
+	"io"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/utils/integer"
+	"sigs.k8s.io/kustomize/kstatus/observe/common"
+	"sigs.k8s.io/kustomize/kstatus/status"
+	"strings"
+	"time"
+	"unicode/utf8"
+
+	"sigs.k8s.io/kustomize/kstatus/observe/collector"
+)
+
+type tableContentFunc func(w io.Writer, width int, resource *common.ObservedResource) (int, error)
+
+type ColumnDef struct {
+	name string
+	header string
+	width int
+	content tableContentFunc
+}
+
+var (
+	columns = []ColumnDef{
+		{
+			name: "namespace",
+			header: "NAMESPACE",
+			width: 10,
+			content: func(w io.Writer, availableWidth int, resource *common.ObservedResource) (int, error) {
+				namespace := resource.Identifier.Namespace
+				if len(namespace) > availableWidth {
+					namespace = namespace[:availableWidth]
+				}
+				_, err := fmt.Fprint(w, namespace)
+				return len(namespace), err
+			},
+		},
+		{
+			name: "resource",
+			header: "RESOURCE",
+			width: 20,
+			content: func(w io.Writer, availableWidth int, resource *common.ObservedResource) (int, error) {
+				text := fmt.Sprintf("%s/%s", resource.Identifier.GroupKind.Kind, resource.Identifier.Name)
+				if len(text) > availableWidth {
+					text = text[:availableWidth]
+				}
+				_, err := fmt.Fprintf(w, text)
+				return len(text), err
+			},
+		},
+		{
+			name: "status",
+			header: "STATUS",
+			width: 10,
+			content: func(w io.Writer, availableWidth int, resource *common.ObservedResource) (int, error) {
+				s := resource.Status.String()
+				if len(s) > availableWidth {
+					s = s[:availableWidth]
+				}
+				color, setColor := colorForTableStatus(resource.Status)
+				var outputStatus string
+				if setColor {
+					outputStatus = sPrintWithColor(color, s)
+				} else {
+					outputStatus = s
+				}
+				_, err := fmt.Fprintf(w, outputStatus)
+				return len(s), err
+			},
+		},
+		{
+			name: "conditions",
+			header: "CONDITIONS",
+			width: 30,
+			content: func(w io.Writer, availableWidth int, resource *common.ObservedResource) (int, error) {
+				u := resource.Resource
+				if u == nil {
+					return fmt.Fprintf(w,"-")
+				}
+
+				conditions, found, err := unstructured.NestedSlice(u.Object, "status", "conditions")
+				if !found || err != nil || len(conditions) == 0 {
+					return fmt.Fprintf(w,"<None>")
+				}
+
+				realLength := 0
+				for i, cond := range conditions {
+					condition := cond.(map[string]interface{})
+					conditionType := condition["type"].(string)
+					conditionStatus := condition["status"].(string)
+					var color color
+					switch conditionStatus {
+					case "True":
+						color = GREEN
+					case "False":
+						color = RED
+					default:
+						color = YELLOW
+					}
+					remainingWidth := availableWidth - realLength
+					if len(conditionType) > remainingWidth {
+						conditionType = conditionType[:remainingWidth]
+					}
+					_, err := fmt.Fprint(w, sPrintWithColor(color, conditionType))
+					if err != nil {
+						return realLength, err
+					}
+					realLength += len(conditionType)
+					if i < len(conditions) - 1 && availableWidth - realLength > 2 {
+						_, err = fmt.Fprintf(w, ",")
+						if err != nil {
+							return realLength, err
+						}
+						realLength += 1
+					}
+				}
+				return realLength, nil
+			},
+		},
+		{
+			name: "age",
+			header: "AGE",
+			width: 10,
+			content: func(w io.Writer, availableWidth int, resource *common.ObservedResource) (int, error) {
+				u := resource.Resource
+				if u == nil {
+					return fmt.Fprint(w, "-")
+				}
+
+				timestamp, found, err := unstructured.NestedString(u.Object, "metadata", "creationTimestamp")
+				if !found || err != nil || timestamp == "" {
+					return fmt.Fprint(w, "-")
+				}
+				parsedTime, err := time.Parse(time.RFC3339, timestamp)
+				if err != nil {
+					return fmt.Fprint(w, "-")
+				}
+				age := time.Since(parsedTime)
+				switch {
+				case age.Seconds() <= 90:
+					return fmt.Fprintf(w, "%ds", integer.RoundToInt32(age.Round(time.Second).Seconds()))
+				case age.Minutes() <= 90:
+					return fmt.Fprintf(w, "%dm", integer.RoundToInt32(age.Round(time.Minute).Minutes()))
+				default:
+					return fmt.Fprintf(w, "%dh", integer.RoundToInt32(age.Round(time.Hour).Hours()))
+				}
+			},
+		},
+	}
+)
+
+type TreePrinter struct {
+	collector *collector.ObservedStatusCollector
+	w io.Writer
+}
+
+func NewTreePrinter(collector *collector.ObservedStatusCollector, w io.Writer) *TreePrinter {
+	return &TreePrinter{
+		collector: collector,
+		w: w,
+	}
+}
+
+func (t *TreePrinter) PrintUntil(stop <-chan struct{}, interval time.Duration) <-chan struct{} {
+	completed := make(chan struct{})
+
+	linesPrinted := t.PrintTable(t.collector.LatestObservation(), 0)
+
+	go func() {
+		defer close(completed)
+		ticker := time.NewTicker(interval)
+		for {
+			select {
+			case <- stop:
+				ticker.Stop()
+				t.PrintTable(t.collector.LatestObservation(), linesPrinted)
+				return
+			case <- ticker.C:
+				linesPrinted = t.PrintTable(t.collector.LatestObservation(), linesPrinted)
+			}
+		}
+	}()
+
+	return completed
+}
+
+func (t *TreePrinter) PrintTable(data *collector.Observation, moveUpCount int) int {
+	for i := 0; i < moveUpCount; i++ {
+		moveUp(t.w, 1)
+		eraseCurrentLine(t.w)
+	}
+	linePrintCount := 0
+
+	color, setColor := colorForTableStatus(data.AggregateStatus)
+	var aggStatusText string
+	if setColor {
+		aggStatusText = sPrintWithColor(color, data.AggregateStatus.String())
+	} else {
+		aggStatusText = data.AggregateStatus.String()
+	}
+	t.printOrDie("Aggregate status: %s\n", aggStatusText)
+	linePrintCount++
+
+	for i, column := range columns {
+		format := fmt.Sprintf("%%-%ds", column.width)
+		t.printOrDie(format, column.header)
+		if i == len(columns) - 1 {
+			t.printOrDie("\n")
+			linePrintCount++
+		} else {
+			t.printOrDie("  ")
+		}
+	}
+
+	for _, resource := range data.ObservedResources {
+		for i, column := range columns {
+			written, err := column.content(t.w, column.width, resource)
+			if err != nil {
+				panic(err)
+			}
+			remainingSpace := column.width - written
+			printOrDie(t.w, strings.Repeat(" ", remainingSpace))
+			if i == len(columns) - 1 {
+				t.printOrDie("\n")
+				linePrintCount++
+			} else {
+				t.printOrDie("  ")
+			}
+		}
+
+		linePrintCount += t.PrintSubTable(resource.GeneratedResources, "")
+	}
+
+	return linePrintCount
+}
+
+func (t *TreePrinter) PrintSubTable(resources []*common.ObservedResource, prefix string) int {
+	linePrintCount := 0
+	for j, resource := range resources {
+		for i, column := range columns {
+			availableWidth := column.width
+			if column.name == "resource" {
+				if j < len(resources) - 1 {
+					printOrDie(t.w, prefix + `├─ `)
+				} else {
+					printOrDie(t.w, prefix + `└─ `)
+				}
+				availableWidth -= utf8.RuneCountInString(prefix) + 3
+			}
+			written, err := column.content(t.w, availableWidth, resource)
+			if err != nil {
+				panic(err)
+			}
+			remainingSpace := availableWidth - written
+			printOrDie(t.w, strings.Repeat(" ", remainingSpace))
+			if i == len(columns) - 1 {
+				t.printOrDie("\n")
+				linePrintCount++
+			} else {
+				t.printOrDie("  ")
+			}
+		}
+
+		var prefix string
+		if j < len(resources) - 1 {
+			prefix = `│  `
+		} else {
+			prefix = "  "
+		}
+		linePrintCount += t.PrintSubTable(resource.GeneratedResources, prefix)
+	}
+	return linePrintCount
+}
+
+func (t *TreePrinter) printOrDie(format string, a ...interface{}) {
+	_, err := fmt.Fprintf(t.w, format, a...)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func (t *TreePrinter) printWithWidthOrDie(width int, text string, a ...interface{}) {
+	fullText := fmt.Sprintf(text, a...)
+	actualLength := utf8.RuneCountInString(stripansi.Strip(fullText))
+	if actualLength < width {
+		fullText = fullText + strings.Repeat(" ", width - actualLength)
+	}
+	if actualLength > width {
+		fullText = fullText[:width]
+	}
+	fullText += fmt.Sprintf("%c[%dm", ESC, RESET)
+	t.printOrDie(fullText)
+}
+
+func sPrintWithColor(color color, format string, a ...interface{}) string {
+	return fmt.Sprintf("%c[%dm", ESC, color) +
+		fmt.Sprintf(format, a...) +
+		fmt.Sprintf("%c[%dm", ESC, RESET)
+}
+
+func colorForTableStatus(s status.Status) (color color, setColor bool) {
+	switch s {
+	case status.CurrentStatus:
+		color = GREEN
+		setColor = true
+	case status.InProgressStatus:
+		color = YELLOW
+		setColor = true
+	case status.FailedStatus:
+		color = RED
+		setColor = true
+	}
+	return
+}
+

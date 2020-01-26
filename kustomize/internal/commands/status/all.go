@@ -27,5 +27,6 @@ func NewCmdStatus() *cobra.Command {
 	c.AddCommand(cmd.FetchCommand())
 	c.AddCommand(cmd.WaitCommand())
 	c.AddCommand(cmd.EventsCommand())
+	c.AddCommand(cmd.TreeCommand())
 	return c
 }
