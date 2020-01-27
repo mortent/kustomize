@@ -10,6 +10,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/kustomize/kstatus/observe/common"
 	"sigs.k8s.io/kustomize/kstatus/observe/observers"
+	"sigs.k8s.io/kustomize/kstatus/observe/reader"
 	"sigs.k8s.io/kustomize/kstatus/status"
 	"time"
 
@@ -27,34 +28,24 @@ type StatusAggregator interface {
 }
 
 func NewStatusObserver(reader client.Reader, mapper meta.RESTMapper) *StatusObserver {
-	podObserver := observers.NewPodObserver(reader, mapper)
-	replicaSetObserver := observers.NewReplicaSetObserver(reader, mapper, podObserver)
-	deploymentObserver := observers.NewDeploymentObserver(reader, mapper, replicaSetObserver)
-	statefulSetObserver := observers.NewStatefulSetObserver(reader, mapper, podObserver)
-	jobObserver := observers.NewJobObserver(reader, mapper, podObserver)
 	return &StatusObserver{
-		observers: map[schema.GroupKind]ResourceObserver{
-			appsv1.SchemeGroupVersion.WithKind("Deployment").GroupKind(): deploymentObserver,
-			appsv1.SchemeGroupVersion.WithKind("StatefulSet").GroupKind(): statefulSetObserver,
-			appsv1.SchemeGroupVersion.WithKind("ReplicaSet").GroupKind(): replicaSetObserver,
-			v1.SchemeGroupVersion.WithKind("Pod").GroupKind(): podObserver,
-			batchv1.SchemeGroupVersion.WithKind("Job").GroupKind(): jobObserver,
-		},
-		defaultObserver: observers.NewDefaultObserver(reader, mapper),
+		reader: reader,
+		mapper: mapper,
 	}
 }
 
-type StatusObserver struct{
-	observers map[schema.GroupKind]ResourceObserver
-	defaultObserver ResourceObserver
+type StatusObserver struct {
+	reader client.Reader
+	mapper meta.RESTMapper
 }
 
 type EventType string
 
 const (
 	ResourceUpdateEvent EventType = "ResourceUpdated"
-	CompletedEvent EventType = "Completed"
-	AbortedEvent EventType = "Aborted"
+	CompletedEvent      EventType = "Completed"
+	AbortedEvent        EventType = "Aborted"
+	ErrorEvent EventType = "Error"
 )
 
 type Event struct {
@@ -63,37 +54,56 @@ type Event struct {
 	AggregateStatus status.Status
 
 	Resource *common.ObservedResource
+
+	Error error
 }
 
-func (s *StatusObserver) Observe(ctx context.Context, resources []wait.ResourceIdentifier, stopOnCompleted bool) <-chan Event {
+func (s *StatusObserver) Observe(ctx context.Context, resources []wait.ResourceIdentifier, stopOnCompleted bool, useCache bool) <-chan Event {
 	eventChannel := make(chan Event)
 
-	runner := StatusObserverRunner{
-		ctx:                       ctx,
-		identifiers:               resources,
-		eventChannel:              eventChannel,
-		observer:                  s,
-		previousObservedResources: make(map[wait.ResourceIdentifier]*common.ObservedResource),
-		statusAggregator:          NewAllCurrentOrNotFoundStatusAggregator(resources),
-		stopOnCompleted:           stopOnCompleted,
+	var observerReader reader.ObserverReader
+	if useCache {
+		var err error
+		observerReader, err = reader.NewCachedObserverReader(s.reader, s.mapper, resources)
+		if err != nil {
+			panic(err)
+		}
+	} else {
+		observerReader = &reader.NoCacheObserverReader{
+			Reader: s.reader,
+		}
 	}
+
+	runner := newStatusObserverRunner(ctx, observerReader, s.mapper, resources, eventChannel, stopOnCompleted)
 	go runner.Run()
 
 	return eventChannel
 }
 
-func (s *StatusObserver) observerForGroupKind(gk schema.GroupKind) ResourceObserver {
-	observer, ok := s.observers[gk]
-	if !ok {
-		return s.defaultObserver
+func newStatusObserverRunner(ctx context.Context, reader reader.ObserverReader, mapper meta.RESTMapper, resources []wait.ResourceIdentifier,
+	eventChannel chan Event, stopOnCompleted bool) *StatusObserverRunner {
+	resourceObservers, defaultObserver := createObservers(reader, mapper)
+	return &StatusObserverRunner{
+		ctx:                       ctx,
+		reader:                    reader,
+		identifiers:               resources,
+		observers:                 resourceObservers,
+		defaultObserver:           defaultObserver,
+		eventChannel:              eventChannel,
+		previousObservedResources: make(map[wait.ResourceIdentifier]*common.ObservedResource),
+		statusAggregator:          NewAllCurrentOrNotFoundStatusAggregator(resources),
+		stopOnCompleted:           stopOnCompleted,
 	}
-	return observer
 }
 
 type StatusObserverRunner struct {
 	ctx context.Context
 
-	observer *StatusObserver
+	reader reader.ObserverReader
+
+	observers map[schema.GroupKind]ResourceObserver
+
+	defaultObserver ResourceObserver
 
 	identifiers []wait.ResourceIdentifier
 
@@ -123,6 +133,14 @@ func (r *StatusObserverRunner) Run() {
 			}
 			return
 		case <-ticker.C:
+			err := r.reader.Sync(r.ctx)
+			if err != nil {
+				r.eventChannel <- Event{
+					EventType: ErrorEvent,
+					Error: err,
+				}
+				return
+			}
 			completed := r.pollAllResources()
 			if completed {
 				aggregatedStatus := r.statusAggregator.AggregateStatus()
@@ -139,7 +157,7 @@ func (r *StatusObserverRunner) Run() {
 func (r *StatusObserverRunner) pollAllResources() bool {
 	for _, id := range r.identifiers {
 		gk := id.GroupKind
-		observer := r.observer.observerForGroupKind(gk)
+		observer := r.observerForGroupKind(gk)
 		observedResource := observer.Observe(r.ctx, id)
 		r.statusAggregator.ResourceObserved(observedResource)
 		if r.isUpdatedObservedResource(observedResource) {
@@ -157,6 +175,14 @@ func (r *StatusObserverRunner) pollAllResources() bool {
 	return false
 }
 
+func (r *StatusObserverRunner) observerForGroupKind(gk schema.GroupKind) ResourceObserver {
+	observer, ok := r.observers[gk]
+	if !ok {
+		return r.defaultObserver
+	}
+	return observer
+}
+
 func (r *StatusObserverRunner) isUpdatedObservedResource(observedResource *common.ObservedResource) bool {
 	oldObservedResource, found := r.previousObservedResources[observedResource.Identifier]
 	if !found {
@@ -165,56 +191,29 @@ func (r *StatusObserverRunner) isUpdatedObservedResource(observedResource *commo
 	return DeepEqual(observedResource, oldObservedResource)
 }
 
-type AllCurrentOrNotFoundStatusAggregator struct {
-	resourceCurrentStatus map[wait.ResourceIdentifier]status.Status
-}
+func createObservers(reader reader.ObserverReader, mapper meta.RESTMapper) (map[schema.GroupKind]ResourceObserver, ResourceObserver) {
+	podObserver := observers.NewPodObserver(reader, mapper)
+	replicaSetObserver := observers.NewReplicaSetObserver(reader, mapper, podObserver)
+	deploymentObserver := observers.NewDeploymentObserver(reader, mapper, replicaSetObserver)
+	statefulSetObserver := observers.NewStatefulSetObserver(reader, mapper, podObserver)
+	jobObserver := observers.NewJobObserver(reader, mapper, podObserver)
 
-func NewAllCurrentOrNotFoundStatusAggregator(identifiers []wait.ResourceIdentifier) *AllCurrentOrNotFoundStatusAggregator {
-	aggregator := &AllCurrentOrNotFoundStatusAggregator{
-		resourceCurrentStatus: make(map[wait.ResourceIdentifier]status.Status),
+	resourceObservers := map[schema.GroupKind]ResourceObserver{
+		appsv1.SchemeGroupVersion.WithKind("Deployment").GroupKind():  deploymentObserver,
+		appsv1.SchemeGroupVersion.WithKind("StatefulSet").GroupKind(): statefulSetObserver,
+		appsv1.SchemeGroupVersion.WithKind("ReplicaSet").GroupKind():  replicaSetObserver,
+		v1.SchemeGroupVersion.WithKind("Pod").GroupKind():             podObserver,
+		batchv1.SchemeGroupVersion.WithKind("Job").GroupKind():        jobObserver,
 	}
-	for _, id := range identifiers {
-		aggregator.resourceCurrentStatus[id] = status.UnknownStatus
-	}
-	return aggregator
-}
-
-func (d *AllCurrentOrNotFoundStatusAggregator) ResourceObserved(observedResource *common.ObservedResource) {
-	d.resourceCurrentStatus[observedResource.Identifier] = observedResource.Status
-}
-
-func (d *AllCurrentOrNotFoundStatusAggregator) AggregateStatus() status.Status {
-	allCurrentOrNotFound := true
-	anyUnknown := false
-	for _, latestStatus := range d.resourceCurrentStatus {
-		if latestStatus == status.FailedStatus {
-			return status.FailedStatus
-		}
-		if latestStatus == status.UnknownStatus {
-			anyUnknown = true
-		}
-		if !(latestStatus == status.CurrentStatus || latestStatus == status.NotFoundStatus) {
-			allCurrentOrNotFound = false
-		}
-	}
-	if anyUnknown {
-		return status.UnknownStatus
-	}
-	if allCurrentOrNotFound {
-		return status.CurrentStatus
-	}
-	return status.InProgressStatus
-}
-
-func (d *AllCurrentOrNotFoundStatusAggregator) Completed() bool {
-	return d.AggregateStatus() == status.CurrentStatus
+	defaultObserver := observers.NewDefaultObserver(reader, mapper)
+	return resourceObservers, defaultObserver
 }
 
 func DeepEqual(or1, or2 *common.ObservedResource) bool {
 	if or1.Identifier != or2.Identifier ||
 		or1.Status != or2.Status ||
 		or1.Error != or2.Error ||
-		or1.ShortMessage != or2.ShortMessage {
+		or1.Message != or2.Message {
 		return false
 	}
 	if len(or1.GeneratedResources) != len(or2.GeneratedResources) {

@@ -42,7 +42,7 @@ var (
 		{
 			name: "resource",
 			header: "RESOURCE",
-			width: 20,
+			width: 40,
 			content: func(w io.Writer, availableWidth int, resource *common.ObservedResource) (int, error) {
 				text := fmt.Sprintf("%s/%s", resource.Identifier.GroupKind.Kind, resource.Identifier.Name)
 				if len(text) > availableWidth {
@@ -75,7 +75,7 @@ var (
 		{
 			name: "conditions",
 			header: "CONDITIONS",
-			width: 30,
+			width: 60,
 			content: func(w io.Writer, availableWidth int, resource *common.ObservedResource) (int, error) {
 				u := resource.Resource
 				if u == nil {
@@ -150,6 +150,23 @@ var (
 				}
 			},
 		},
+		{
+			name: "message",
+			header: "MESSAGE",
+			width: 60,
+			content: func(w io.Writer, availableWidth int, resource *common.ObservedResource) (int, error) {
+				var message string
+				if resource.Error != nil {
+					message = resource.Error.Error()
+				} else {
+					message = resource.Message
+				}
+				if len(message) > availableWidth {
+					message = message[:availableWidth]
+				}
+				return fmt.Fprint(w, message)
+			},
+		},
 	}
 )
 
@@ -168,7 +185,7 @@ func NewTreePrinter(collector *collector.ObservedStatusCollector, w io.Writer) *
 func (t *TreePrinter) PrintUntil(stop <-chan struct{}, interval time.Duration) <-chan struct{} {
 	completed := make(chan struct{})
 
-	linesPrinted := t.PrintTable(t.collector.LatestObservation(), 0)
+	linesPrinted := t.printTable(t.collector.LatestObservation(), 0)
 
 	go func() {
 		defer close(completed)
@@ -177,10 +194,16 @@ func (t *TreePrinter) PrintUntil(stop <-chan struct{}, interval time.Duration) <
 			select {
 			case <- stop:
 				ticker.Stop()
-				t.PrintTable(t.collector.LatestObservation(), linesPrinted)
+				latestObservation := t.collector.LatestObservation()
+				if latestObservation.Error != nil {
+					t.printError(latestObservation)
+					return
+				}
+				linesPrinted = t.printTable(latestObservation, linesPrinted)
 				return
 			case <- ticker.C:
-				linesPrinted = t.PrintTable(t.collector.LatestObservation(), linesPrinted)
+				latestObservation := t.collector.LatestObservation()
+				linesPrinted = t.printTable(latestObservation, linesPrinted)
 			}
 		}
 	}()
@@ -188,7 +211,11 @@ func (t *TreePrinter) PrintUntil(stop <-chan struct{}, interval time.Duration) <
 	return completed
 }
 
-func (t *TreePrinter) PrintTable(data *collector.Observation, moveUpCount int) int {
+func (t *TreePrinter) printError(data *collector.Observation) {
+	fmt.Fprintf(t.w, "Error: %s\n", data.Error.Error())
+}
+
+func (t *TreePrinter) printTable(data *collector.Observation, moveUpCount int) int {
 	for i := 0; i < moveUpCount; i++ {
 		moveUp(t.w, 1)
 		eraseCurrentLine(t.w)
@@ -232,13 +259,13 @@ func (t *TreePrinter) PrintTable(data *collector.Observation, moveUpCount int) i
 			}
 		}
 
-		linePrintCount += t.PrintSubTable(resource.GeneratedResources, "")
+		linePrintCount += t.printSubTable(resource.GeneratedResources, "")
 	}
 
 	return linePrintCount
 }
 
-func (t *TreePrinter) PrintSubTable(resources []*common.ObservedResource, prefix string) int {
+func (t *TreePrinter) printSubTable(resources []*common.ObservedResource, prefix string) int {
 	linePrintCount := 0
 	for j, resource := range resources {
 		for i, column := range columns {
@@ -271,7 +298,7 @@ func (t *TreePrinter) PrintSubTable(resources []*common.ObservedResource, prefix
 		} else {
 			prefix = "  "
 		}
-		linePrintCount += t.PrintSubTable(resource.GeneratedResources, prefix)
+		linePrintCount += t.printSubTable(resource.GeneratedResources, prefix)
 	}
 	return linePrintCount
 }

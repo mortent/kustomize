@@ -4,13 +4,13 @@ import (
 	"context"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/kustomize/kstatus/observe/common"
+	"sigs.k8s.io/kustomize/kstatus/observe/reader"
 	"sigs.k8s.io/kustomize/kstatus/status"
 	"sigs.k8s.io/kustomize/kstatus/wait"
 )
 
-func NewDefaultObserver(reader client.Reader, mapper meta.RESTMapper) *DefaultObserver {
+func NewDefaultObserver(reader reader.ObserverReader, mapper meta.RESTMapper) *DefaultObserver {
 	return &DefaultObserver{
 		BaseObserver: BaseObserver{
 			Reader: reader,
@@ -47,6 +47,6 @@ func (d *DefaultObserver) ObserveResource(_ context.Context, resource *unstructu
 		Identifier: identifier,
 		Status: res.Status,
 		Resource: resource,
-		LongMessage: res.Message,
+		Message: res.Message,
 	}
 }

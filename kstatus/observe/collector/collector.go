@@ -1,8 +1,6 @@
 package collector
 
 import (
-	"fmt"
-	"os"
 	"sort"
 	"sync"
 
@@ -29,9 +27,13 @@ func NewObservedStatusCollector(identifiers []wait.ResourceIdentifier) *Observed
 type ObservedStatusCollector struct {
 	mux sync.RWMutex
 
+	lastEventType observe.EventType
+
 	aggregateStatus status.Status
 
 	observations map[wait.ResourceIdentifier]*common.ObservedResource
+
+	error error
 }
 
 func (o *ObservedStatusCollector) Observe(eventChannel <-chan observe.Event, stop <-chan struct{}) <-chan struct{} {
@@ -54,9 +56,13 @@ func (o *ObservedStatusCollector) Observe(eventChannel <-chan observe.Event, sto
 }
 
 func (o *ObservedStatusCollector) processEvent(event observe.Event) {
-	fmt.Fprintf(os.Stderr, "log event %s\n", event.AggregateStatus)
 	o.mux.Lock()
 	defer o.mux.Unlock()
+	o.lastEventType = event.EventType
+	if event.EventType == observe.ErrorEvent {
+		o.error = event.Error
+		return
+	}
 	o.aggregateStatus = event.AggregateStatus
 	if event.EventType == observe.ResourceUpdateEvent {
 		observedResource := event.Resource
@@ -65,9 +71,13 @@ func (o *ObservedStatusCollector) processEvent(event observe.Event) {
 }
 
 type Observation struct {
+	LastEventType observe.EventType
+
 	AggregateStatus status.Status
 
 	ObservedResources []*common.ObservedResource
+
+	Error error
 }
 
 func (o *ObservedStatusCollector) LatestObservation() *Observation {
@@ -81,7 +91,9 @@ func (o *ObservedStatusCollector) LatestObservation() *Observation {
 	sort.Sort(observedResources)
 
 	return &Observation{
+		LastEventType: o.lastEventType,
 		AggregateStatus: o.aggregateStatus,
 		ObservedResources: observedResources,
+		Error: o.error,
 	}
 }

@@ -16,9 +16,7 @@ type ObservedResource struct {
 
 	Error error
 
-	ShortMessage string
-
-	LongMessage string
+	Message string
 
 	GeneratedResources []*ObservedResource
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sigs.k8s.io/kustomize/kstatus/observe/reader"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -11,14 +12,13 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/kustomize/kstatus/observe/common"
 	"sigs.k8s.io/kustomize/kstatus/status"
 	"sigs.k8s.io/kustomize/kstatus/wait"
 )
 
 type BaseObserver struct {
-	Reader client.Reader
+	Reader reader.ObserverReader
 
 	Mapper meta.RESTMapper
 }
@@ -41,8 +41,7 @@ func (b *BaseObserver) LookupResource(ctx context.Context, identifier wait.Resou
 		return nil, &common.ObservedResource{
 			Identifier: identifier,
 			Status: status.NotFoundStatus,
-			ShortMessage: "NotFound",
-			LongMessage: "Resource doesn't exist",
+			Message: "Resource not found",
 		}
 	}
 	if err != nil {

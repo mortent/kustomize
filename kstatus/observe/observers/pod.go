@@ -4,14 +4,14 @@ import (
 	"context"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"sigs.k8s.io/kustomize/kstatus/observe/reader"
 
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/kustomize/kstatus/observe/common"
 	"sigs.k8s.io/kustomize/kstatus/status"
 	"sigs.k8s.io/kustomize/kstatus/wait"
 )
 
-func NewPodObserver(reader client.Reader, mapper meta.RESTMapper) *PodObserver {
+func NewPodObserver(reader reader.ObserverReader, mapper meta.RESTMapper) *PodObserver {
 	return &PodObserver{
 		BaseObserver: BaseObserver{
 			Reader: reader,
@@ -48,6 +48,6 @@ func (r *PodObserver) ObservePod(_ context.Context, pod *unstructured.Unstructur
 		Identifier: identifier,
 		Status: res.Status,
 		Resource: pod,
-		LongMessage: res.Message,
+		Message: res.Message,
 	}
 }

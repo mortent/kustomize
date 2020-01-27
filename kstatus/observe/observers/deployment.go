@@ -2,18 +2,18 @@ package observers
 
 import (
 	"context"
+	"sigs.k8s.io/kustomize/kstatus/observe/reader"
 
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/kustomize/kstatus/observe/common"
 	"sigs.k8s.io/kustomize/kstatus/status"
 	"sigs.k8s.io/kustomize/kstatus/wait"
 	"sort"
 )
 
-func NewDeploymentObserver(reader client.Reader, mapper meta.RESTMapper, rsObserver *ReplicaSetObserver) *DeploymentObserver {
+func NewDeploymentObserver(reader reader.ObserverReader, mapper meta.RESTMapper, rsObserver *ReplicaSetObserver) *DeploymentObserver {
 	return &DeploymentObserver{
 		BaseObserver: BaseObserver{
 			Reader: reader,
@@ -53,7 +53,7 @@ func (d *DeploymentObserver) ObserveDeployment(ctx context.Context, deployment *
 
 	var rsList unstructured.UnstructuredList
 	rsList.SetGroupVersionKind(appsv1.SchemeGroupVersion.WithKind("ReplicaSet"))
-	err = d.Reader.List(ctx, &rsList, client.InNamespace(namespace), client.MatchingLabelsSelector{Selector: selector})
+	err = d.Reader.ListNamespaceScoped(ctx, &rsList, namespace, selector)
 	if err != nil {
 		return &common.ObservedResource{
 			Identifier: identifier,
@@ -85,7 +85,7 @@ func (d *DeploymentObserver) ObserveDeployment(ctx context.Context, deployment *
 		Identifier: identifier,
 		Status: res.Status,
 		Resource: deployment,
-		LongMessage: res.Message,
+		Message: res.Message,
 		GeneratedResources: observedReplicaSets,
 	}
 }

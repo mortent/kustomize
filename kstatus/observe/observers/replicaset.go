@@ -5,14 +5,14 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/kustomize/kstatus/observe/common"
+	"sigs.k8s.io/kustomize/kstatus/observe/reader"
 	"sigs.k8s.io/kustomize/kstatus/status"
 	"sigs.k8s.io/kustomize/kstatus/wait"
 	"sort"
 )
 
-func NewReplicaSetObserver(reader client.Reader, mapper meta.RESTMapper, podObserver *PodObserver) *ReplicaSetObserver {
+func NewReplicaSetObserver(reader reader.ObserverReader, mapper meta.RESTMapper, podObserver *PodObserver) *ReplicaSetObserver {
 	return &ReplicaSetObserver{
 		BaseObserver: BaseObserver{
 			Reader: reader,
@@ -52,7 +52,7 @@ func (r *ReplicaSetObserver) ObserveReplicaSet(ctx context.Context, rs *unstruct
 
 	var podList unstructured.UnstructuredList
 	podList.SetGroupVersionKind(v1.SchemeGroupVersion.WithKind("Pod"))
-	err = r.Reader.List(ctx, &podList, client.InNamespace(namespace), client.MatchingLabelsSelector{Selector: selector})
+	err = r.Reader.ListNamespaceScoped(ctx, &podList, namespace, selector)
 	if err != nil {
 		return &common.ObservedResource{
 			Identifier: identifier,
@@ -84,7 +84,7 @@ func (r *ReplicaSetObserver) ObserveReplicaSet(ctx context.Context, rs *unstruct
 		Identifier: identifier,
 		Status: res.Status,
 		Resource: rs,
-		LongMessage: res.Message,
+		Message: res.Message,
 		GeneratedResources: observedPods,
 	}
 }

@@ -2,18 +2,18 @@ package observers
 
 import (
 	"context"
+	"sigs.k8s.io/kustomize/kstatus/observe/reader"
 	"sort"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/kustomize/kstatus/observe/common"
 	"sigs.k8s.io/kustomize/kstatus/status"
 	"sigs.k8s.io/kustomize/kstatus/wait"
 )
 
-func NewStatefulSetObserver(reader client.Reader, mapper meta.RESTMapper, podObserver *PodObserver) *StatefulSetObserver {
+func NewStatefulSetObserver(reader reader.ObserverReader, mapper meta.RESTMapper, podObserver *PodObserver) *StatefulSetObserver {
 	return &StatefulSetObserver{
 		BaseObserver: BaseObserver{
 			Reader: reader,
@@ -53,7 +53,7 @@ func (s *StatefulSetObserver) ObserveStatefulSet(ctx context.Context, statefulSe
 
 	var podList unstructured.UnstructuredList
 	podList.SetGroupVersionKind(v1.SchemeGroupVersion.WithKind("Pod"))
-	err = s.Reader.List(ctx, &podList, client.InNamespace(namespace), client.MatchingLabelsSelector{Selector: selector})
+	err = s.Reader.ListNamespaceScoped(ctx, &podList, namespace, selector)
 	if err != nil {
 		return &common.ObservedResource{
 			Identifier: identifier,
@@ -85,7 +85,7 @@ func (s *StatefulSetObserver) ObserveStatefulSet(ctx context.Context, statefulSe
 		Identifier: identifier,
 		Status: res.Status,
 		Resource: statefulSet,
-		LongMessage: res.Message,
+		Message: res.Message,
 		GeneratedResources: observedReplicaSets,
 	}
 }

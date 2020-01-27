@@ -98,7 +98,7 @@ func (r *TreeRunner) runE(c *cobra.Command, args []string) error {
 	printer := NewTreePrinter(coll, c.OutOrStdout())
 	printingFinished := printer.PrintUntil(stop, 1 * time.Second)
 
-	eventChannel := observer.Observe(ctx, captureFilter.Identifiers, r.StopOnComplete)
+	eventChannel := observer.Observe(ctx, captureFilter.Identifiers, r.StopOnComplete, true)
 	completed := coll.Observe(eventChannel, stop)
 
 	<-completed
