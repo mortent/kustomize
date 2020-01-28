@@ -8,6 +8,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/kustomize/kstatus/observe/aggregator"
 	"sigs.k8s.io/kustomize/kstatus/observe/common"
 	"sigs.k8s.io/kustomize/kstatus/observe/observers"
 	"sigs.k8s.io/kustomize/kstatus/observe/reader"
@@ -16,10 +17,6 @@ import (
 
 	"sigs.k8s.io/kustomize/kstatus/wait"
 )
-
-type ResourceObserver interface {
-	Observe(ctx context.Context, resource wait.ResourceIdentifier) *common.ObservedResource
-}
 
 type StatusAggregator interface {
 	ResourceObserved(resource *common.ObservedResource)
@@ -80,18 +77,18 @@ func (s *StatusObserver) Observe(ctx context.Context, resources []wait.ResourceI
 	return eventChannel
 }
 
-func newStatusObserverRunner(ctx context.Context, reader reader.ObserverReader, mapper meta.RESTMapper, resources []wait.ResourceIdentifier,
+func newStatusObserverRunner(ctx context.Context, reader reader.ObserverReader, mapper meta.RESTMapper, identifiers []wait.ResourceIdentifier,
 	eventChannel chan Event, stopOnCompleted bool) *StatusObserverRunner {
 	resourceObservers, defaultObserver := createObservers(reader, mapper)
 	return &StatusObserverRunner{
 		ctx:                       ctx,
 		reader:                    reader,
-		identifiers:               resources,
+		identifiers:               identifiers,
 		observers:                 resourceObservers,
 		defaultObserver:           defaultObserver,
 		eventChannel:              eventChannel,
 		previousObservedResources: make(map[wait.ResourceIdentifier]*common.ObservedResource),
-		statusAggregator:          NewAllCurrentOrNotFoundStatusAggregator(resources),
+		statusAggregator:          aggregator.NewAllCurrentOrNotFoundStatusAggregator(identifiers),
 		stopOnCompleted:           stopOnCompleted,
 	}
 }
@@ -101,9 +98,9 @@ type StatusObserverRunner struct {
 
 	reader reader.ObserverReader
 
-	observers map[schema.GroupKind]ResourceObserver
+	observers map[schema.GroupKind]observers.ResourceObserver
 
-	defaultObserver ResourceObserver
+	defaultObserver observers.ResourceObserver
 
 	identifiers []wait.ResourceIdentifier
 
@@ -141,7 +138,7 @@ func (r *StatusObserverRunner) Run() {
 				}
 				return
 			}
-			completed := r.pollAllResources()
+			completed := r.observeStatusForAllResources()
 			if completed {
 				aggregatedStatus := r.statusAggregator.AggregateStatus()
 				r.eventChannel <- Event{
@@ -154,13 +151,14 @@ func (r *StatusObserverRunner) Run() {
 	}
 }
 
-func (r *StatusObserverRunner) pollAllResources() bool {
+func (r *StatusObserverRunner) observeStatusForAllResources() bool {
 	for _, id := range r.identifiers {
 		gk := id.GroupKind
 		observer := r.observerForGroupKind(gk)
 		observedResource := observer.Observe(r.ctx, id)
 		r.statusAggregator.ResourceObserved(observedResource)
 		if r.isUpdatedObservedResource(observedResource) {
+			r.previousObservedResources[id] = observedResource
 			aggregatedStatus := r.statusAggregator.AggregateStatus()
 			r.eventChannel <- Event{
 				EventType:       ResourceUpdateEvent,
@@ -172,10 +170,13 @@ func (r *StatusObserverRunner) pollAllResources() bool {
 			}
 		}
 	}
+	if r.statusAggregator.Completed() && r.stopOnCompleted {
+		return true
+	}
 	return false
 }
 
-func (r *StatusObserverRunner) observerForGroupKind(gk schema.GroupKind) ResourceObserver {
+func (r *StatusObserverRunner) observerForGroupKind(gk schema.GroupKind) observers.ResourceObserver {
 	observer, ok := r.observers[gk]
 	if !ok {
 		return r.defaultObserver
@@ -188,22 +189,24 @@ func (r *StatusObserverRunner) isUpdatedObservedResource(observedResource *commo
 	if !found {
 		return true
 	}
-	return DeepEqual(observedResource, oldObservedResource)
+	return !DeepEqual(observedResource, oldObservedResource)
 }
 
-func createObservers(reader reader.ObserverReader, mapper meta.RESTMapper) (map[schema.GroupKind]ResourceObserver, ResourceObserver) {
+func createObservers(reader reader.ObserverReader, mapper meta.RESTMapper) (map[schema.GroupKind]observers.ResourceObserver, observers.ResourceObserver) {
 	podObserver := observers.NewPodObserver(reader, mapper)
 	replicaSetObserver := observers.NewReplicaSetObserver(reader, mapper, podObserver)
 	deploymentObserver := observers.NewDeploymentObserver(reader, mapper, replicaSetObserver)
 	statefulSetObserver := observers.NewStatefulSetObserver(reader, mapper, podObserver)
 	jobObserver := observers.NewJobObserver(reader, mapper, podObserver)
+	serviceObserver := observers.NewServiceObserver(reader, mapper)
 
-	resourceObservers := map[schema.GroupKind]ResourceObserver{
+	resourceObservers := map[schema.GroupKind]observers.ResourceObserver{
 		appsv1.SchemeGroupVersion.WithKind("Deployment").GroupKind():  deploymentObserver,
 		appsv1.SchemeGroupVersion.WithKind("StatefulSet").GroupKind(): statefulSetObserver,
 		appsv1.SchemeGroupVersion.WithKind("ReplicaSet").GroupKind():  replicaSetObserver,
 		v1.SchemeGroupVersion.WithKind("Pod").GroupKind():             podObserver,
 		batchv1.SchemeGroupVersion.WithKind("Job").GroupKind():        jobObserver,
+		v1.SchemeGroupVersion.WithKind("Service").GroupKind(): 				 serviceObserver,
 	}
 	defaultObserver := observers.NewDefaultObserver(reader, mapper)
 	return resourceObservers, defaultObserver
@@ -212,10 +215,17 @@ func createObservers(reader reader.ObserverReader, mapper meta.RESTMapper) (map[
 func DeepEqual(or1, or2 *common.ObservedResource) bool {
 	if or1.Identifier != or2.Identifier ||
 		or1.Status != or2.Status ||
-		or1.Error != or2.Error ||
 		or1.Message != or2.Message {
 		return false
 	}
+
+	if or1.Error != nil && or2.Error != nil && or1.Error.Error() != or2.Error.Error() {
+		return false
+	}
+	if (or1.Error == nil && or2.Error != nil) || (or1.Error != nil && or2.Error == nil)  {
+		return false
+	}
+
 	if len(or1.GeneratedResources) != len(or2.GeneratedResources) {
 		return false
 	}

@@ -1,4 +1,4 @@
-package observe
+package aggregator
 
 import (
 	"sigs.k8s.io/kustomize/kstatus/observe/common"
@@ -25,6 +25,11 @@ func (d *AllCurrentOrNotFoundStatusAggregator) ResourceObserved(observedResource
 }
 
 func (d *AllCurrentOrNotFoundStatusAggregator) AggregateStatus() status.Status {
+	// if we are not observing any resources, we consider status be Current.
+	if len(d.resourceCurrentStatus) == 0 {
+		return status.CurrentStatus
+	}
+
 	allCurrentOrNotFound := true
 	anyUnknown := false
 	for _, latestStatus := range d.resourceCurrentStatus {

@@ -17,6 +17,8 @@ import (
 	"sigs.k8s.io/kustomize/kstatus/wait"
 )
 
+type computeStatusFunc func(u *unstructured.Unstructured) (*status.Result, error)
+
 type BaseObserver struct {
 	Reader reader.ObserverReader
 
@@ -28,8 +30,8 @@ func (b *BaseObserver) LookupResource(ctx context.Context, identifier wait.Resou
 	if err != nil {
 		return nil, &common.ObservedResource{
 			Identifier: identifier,
-			Status: status.UnknownStatus,
-			Error: err,
+			Status:     status.UnknownStatus,
+			Error:      err,
 		}
 	}
 
@@ -40,15 +42,15 @@ func (b *BaseObserver) LookupResource(ctx context.Context, identifier wait.Resou
 	if err != nil && errors.IsNotFound(err) {
 		return nil, &common.ObservedResource{
 			Identifier: identifier,
-			Status: status.NotFoundStatus,
-			Message: "Resource not found",
+			Status:     status.NotFoundStatus,
+			Message:    "Resource not found",
 		}
 	}
 	if err != nil {
 		return nil, &common.ObservedResource{
 			Identifier: identifier,
-			Status: status.UnknownStatus,
-			Error: err,
+			Status:     status.UnknownStatus,
+			Error:      err,
 		}
 	}
 	u.SetNamespace(identifier.Namespace)
@@ -63,15 +65,7 @@ func (b *BaseObserver) GVK(gk schema.GroupKind) (schema.GroupVersionKind, error)
 	return mapping.GroupVersionKind, nil
 }
 
-func (b *BaseObserver) ToIdentifier(u *unstructured.Unstructured) wait.ResourceIdentifier {
-	return wait.ResourceIdentifier{
-		GroupKind: u.GroupVersionKind().GroupKind(),
-		Name: u.GetName(),
-		Namespace: u.GetNamespace(),
-	}
-}
-
-func (b *BaseObserver) ToSelector(resource *unstructured.Unstructured, path ...string) (labels.Selector, error) {
+func toSelector(resource *unstructured.Unstructured, path ...string) (labels.Selector, error) {
 	selector, found, err := unstructured.NestedMap(resource.Object, path...)
 	if err != nil {
 		return nil, err
@@ -89,4 +83,12 @@ func (b *BaseObserver) ToSelector(resource *unstructured.Unstructured, path ...s
 		return nil, err
 	}
 	return metav1.LabelSelectorAsSelector(&s)
+}
+
+func toIdentifier(u *unstructured.Unstructured) wait.ResourceIdentifier {
+	return wait.ResourceIdentifier{
+		GroupKind: u.GroupVersionKind().GroupKind(),
+		Name:      u.GetName(),
+		Namespace: u.GetNamespace(),
+	}
 }

@@ -13,7 +13,7 @@ import (
 	"sigs.k8s.io/kustomize/kstatus/wait"
 )
 
-func NewStatefulSetObserver(reader reader.ObserverReader, mapper meta.RESTMapper, podObserver *PodObserver) *StatefulSetObserver {
+func NewStatefulSetObserver(reader reader.ObserverReader, mapper meta.RESTMapper, podObserver ResourceObserver) *StatefulSetObserver {
 	return &StatefulSetObserver{
 		BaseObserver: BaseObserver{
 			Reader: reader,
@@ -26,7 +26,7 @@ func NewStatefulSetObserver(reader reader.ObserverReader, mapper meta.RESTMapper
 type StatefulSetObserver struct {
 	BaseObserver
 
-	PodObserver *PodObserver
+	PodObserver ResourceObserver
 }
 
 func (s *StatefulSetObserver) Observe(ctx context.Context, identifier wait.ResourceIdentifier) *common.ObservedResource {
@@ -34,14 +34,14 @@ func (s *StatefulSetObserver) Observe(ctx context.Context, identifier wait.Resou
 	if observedResource != nil {
 		return observedResource
 	}
-	return s.ObserveStatefulSet(ctx, statefulSet)
+	return s.ObserveObject(ctx, statefulSet)
 }
 
-func (s *StatefulSetObserver) ObserveStatefulSet(ctx context.Context, statefulSet *unstructured.Unstructured) *common.ObservedResource {
-	identifier := s.ToIdentifier(statefulSet)
+func (s *StatefulSetObserver) ObserveObject(ctx context.Context, statefulSet *unstructured.Unstructured) *common.ObservedResource {
+	identifier := toIdentifier(statefulSet)
 
 	namespace := common.GetNamespaceForNamespacedResource(statefulSet)
-	selector, err := s.ToSelector(statefulSet, "spec", "selector")
+	selector, err := toSelector(statefulSet, "spec", "selector")
 	if err != nil {
 		return &common.ObservedResource{
 			Identifier: identifier,
@@ -66,7 +66,7 @@ func (s *StatefulSetObserver) ObserveStatefulSet(ctx context.Context, statefulSe
 	var observedReplicaSets common.ObservedResources
 	for i := range podList.Items {
 		pod := podList.Items[i]
-		observedReplicaSet := s.PodObserver.ObservePod(ctx, &pod)
+		observedReplicaSet := s.PodObserver.ObserveObject(ctx, &pod)
 		observedReplicaSets = append(observedReplicaSets, observedReplicaSet)
 	}
 	sort.Sort(observedReplicaSets)

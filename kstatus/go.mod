@@ -13,6 +13,8 @@ require (
 	golang.org/x/crypto v0.0.0-20190911031432-227b76d455e7 // indirect
 	golang.org/x/sys v0.0.0-20190911201528-7ad0cfa0b7b5 // indirect
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0 // indirect
+	gopkg.in/yaml.v3 v3.0.0-20200121175148-a6ecf24a6d71
+	gotest.tools v2.2.0+incompatible
 	k8s.io/api v0.17.0
 	k8s.io/apimachinery v0.17.0
 	k8s.io/client-go v0.17.0

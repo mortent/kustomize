@@ -14,6 +14,7 @@ import (
 	"sigs.k8s.io/kustomize/kstatus/wait"
 )
 
+// TODO: These should probably be defined in the observers rather than here.
 var genGroupKinds = map[schema.GroupKind][]schema.GroupKind{
 	schema.GroupKind{Group: "apps", Kind: "Deployment"}: {
 		{
@@ -58,8 +59,8 @@ func buildGvkNamespaceSet(mapper meta.RESTMapper, gks []schema.GroupKind, namesp
 			return err
 		}
 		gvkNamespaceSet.add(gvkNamespace{
-			gvk: mapping.GroupVersionKind,
-			namespace: namespace,
+			GVK:       mapping.GroupVersionKind,
+			Namespace: namespace,
 		})
 		genGKs, found := genGroupKinds[gk]
 		if found {
@@ -104,23 +105,25 @@ type CachedObserverReader struct {
 }
 
 type gvkNamespace struct {
-	gvk schema.GroupVersionKind
-	namespace string
+	GVK       schema.GroupVersionKind
+	Namespace string
 }
 
 func (c *CachedObserverReader) Get(_ context.Context, key client.ObjectKey, obj *unstructured.Unstructured) error {
+	c.RLock()
+	defer c.RUnlock()
 	gvk := obj.GetObjectKind().GroupVersionKind()
 	mapping, err := c.mapper.RESTMapping(gvk.GroupKind())
 	if err != nil {
 		return err
 	}
 	gn := gvkNamespace{
-		gvk: gvk,
-		namespace: key.Namespace,
+		GVK:       gvk,
+		Namespace: key.Namespace,
 	}
 	cacheList, found := c.cache[gn]
 	if !found {
-		return fmt.Errorf("GVK %s and namespace %s not found in cache", gvk.String(), gn.namespace)
+		return fmt.Errorf("GVK %s and Namespace %s not found in cache", gvk.String(), gn.Namespace)
 	}
 	for _, u := range cacheList.Items {
 		if u.GetName() == key.Name {
@@ -132,15 +135,17 @@ func (c *CachedObserverReader) Get(_ context.Context, key client.ObjectKey, obj 
 }
 
 func (c *CachedObserverReader) ListNamespaceScoped(_ context.Context, list *unstructured.UnstructuredList, namespace string, selector labels.Selector) error {
+	c.RLock()
+	defer c.RUnlock()
 	gvk := list.GroupVersionKind()
 	gn := gvkNamespace{
-		gvk: gvk,
-		namespace: namespace,
+		GVK:       gvk,
+		Namespace: namespace,
 	}
 
 	cacheList, found := c.cache[gn]
 	if !found {
-		return fmt.Errorf("GVK %s and namespace %s not found in cache", gvk.String(), gn.namespace)
+		return fmt.Errorf("GVK %s and Namespace %s not found in cache", gvk.String(), gn.Namespace)
 	}
 
 	var items []unstructured.Unstructured
@@ -162,16 +167,16 @@ func (c *CachedObserverReader) Sync(ctx context.Context) error {
 	defer c.Unlock()
 	cache := make(map[gvkNamespace]unstructured.UnstructuredList)
 	for _, gn := range c.gns {
-		mapping, err := c.mapper.RESTMapping(gn.gvk.GroupKind())
+		mapping, err := c.mapper.RESTMapping(gn.GVK.GroupKind())
 		if err != nil {
 			return err
 		}
 		var listOptions []client.ListOption
 		if mapping.Scope == meta.RESTScopeNamespace {
-			listOptions = append(listOptions, client.InNamespace(gn.namespace))
+			listOptions = append(listOptions, client.InNamespace(gn.Namespace))
 		}
 		var list unstructured.UnstructuredList
-		list.SetGroupVersionKind(gn.gvk)
+		list.SetGroupVersionKind(gn.GVK)
 		err = c.reader.List(ctx, &list, listOptions...)
 		if err != nil {
 			return err

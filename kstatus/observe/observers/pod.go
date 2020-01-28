@@ -2,11 +2,11 @@ package observers
 
 import (
 	"context"
+
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"sigs.k8s.io/kustomize/kstatus/observe/reader"
-
 	"sigs.k8s.io/kustomize/kstatus/observe/common"
+	"sigs.k8s.io/kustomize/kstatus/observe/reader"
 	"sigs.k8s.io/kustomize/kstatus/status"
 	"sigs.k8s.io/kustomize/kstatus/wait"
 )
@@ -29,11 +29,11 @@ func (r *PodObserver) Observe(ctx context.Context, identifier wait.ResourceIdent
 	if observedResource != nil {
 		return observedResource
 	}
-	return r.ObservePod(ctx, pod)
+	return r.ObserveObject(ctx, pod)
 }
 
-func (r *PodObserver) ObservePod(_ context.Context, pod *unstructured.Unstructured) *common.ObservedResource {
-	identifier := r.ToIdentifier(pod)
+func (r *PodObserver) ObserveObject(_ context.Context, pod *unstructured.Unstructured) *common.ObservedResource {
+	identifier := toIdentifier(pod)
 
 	res, err := status.Compute(pod)
 	if err != nil {

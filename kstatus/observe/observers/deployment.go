@@ -2,31 +2,35 @@ package observers
 
 import (
 	"context"
-	"sigs.k8s.io/kustomize/kstatus/observe/reader"
+	"sort"
 
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/kustomize/kstatus/observe/common"
+	"sigs.k8s.io/kustomize/kstatus/observe/reader"
 	"sigs.k8s.io/kustomize/kstatus/status"
 	"sigs.k8s.io/kustomize/kstatus/wait"
-	"sort"
 )
 
-func NewDeploymentObserver(reader reader.ObserverReader, mapper meta.RESTMapper, rsObserver *ReplicaSetObserver) *DeploymentObserver {
+func NewDeploymentObserver(reader reader.ObserverReader, mapper meta.RESTMapper, rsObserver ResourceObserver) *DeploymentObserver {
 	return &DeploymentObserver{
 		BaseObserver: BaseObserver{
 			Reader: reader,
 			Mapper: mapper,
 		},
 		RsObserver: rsObserver,
+
+		computeStatusFunc: status.Compute,
 	}
 }
 
 type DeploymentObserver struct {
 	BaseObserver
 
-	RsObserver *ReplicaSetObserver
+	RsObserver ResourceObserver
+
+	computeStatusFunc computeStatusFunc
 }
 
 func (d *DeploymentObserver) Observe(ctx context.Context, identifier wait.ResourceIdentifier) *common.ObservedResource {
@@ -34,14 +38,14 @@ func (d *DeploymentObserver) Observe(ctx context.Context, identifier wait.Resour
 	if observedResource != nil {
 		return observedResource
 	}
-	return d.ObserveDeployment(ctx, deployment)
+	return d.ObserveObject(ctx, deployment)
 }
 
-func (d *DeploymentObserver) ObserveDeployment(ctx context.Context, deployment *unstructured.Unstructured) *common.ObservedResource {
-	identifier := d.ToIdentifier(deployment)
+func (d *DeploymentObserver) ObserveObject(ctx context.Context, deployment *unstructured.Unstructured) *common.ObservedResource {
+	identifier := toIdentifier(deployment)
 
 	namespace := common.GetNamespaceForNamespacedResource(deployment)
-	selector, err := d.ToSelector(deployment, "spec", "selector")
+	selector, err := toSelector(deployment, "spec", "selector")
 	if err != nil {
 		return &common.ObservedResource{
 			Identifier: identifier,
@@ -66,12 +70,12 @@ func (d *DeploymentObserver) ObserveDeployment(ctx context.Context, deployment *
 	var observedReplicaSets common.ObservedResources
 	for i := range rsList.Items {
 		rs := rsList.Items[i]
-		observedReplicaSet := d.RsObserver.ObserveReplicaSet(ctx, &rs)
+		observedReplicaSet := d.RsObserver.ObserveObject(ctx, &rs)
 		observedReplicaSets = append(observedReplicaSets, observedReplicaSet)
 	}
 	sort.Sort(observedReplicaSets)
 
-	res, err := status.Compute(deployment)
+	res, err := d.computeStatusFunc(deployment)
 	if err != nil {
 		return &common.ObservedResource{
 			Identifier: identifier,

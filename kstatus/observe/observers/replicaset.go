@@ -2,6 +2,8 @@ package observers
 
 import (
 	"context"
+	"sort"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -9,11 +11,10 @@ import (
 	"sigs.k8s.io/kustomize/kstatus/observe/reader"
 	"sigs.k8s.io/kustomize/kstatus/status"
 	"sigs.k8s.io/kustomize/kstatus/wait"
-	"sort"
 )
 
-func NewReplicaSetObserver(reader reader.ObserverReader, mapper meta.RESTMapper, podObserver *PodObserver) *ReplicaSetObserver {
-	return &ReplicaSetObserver{
+func NewReplicaSetObserver(reader reader.ObserverReader, mapper meta.RESTMapper, podObserver ResourceObserver) *replicaSetObserver {
+	return &replicaSetObserver{
 		BaseObserver: BaseObserver{
 			Reader: reader,
 			Mapper: mapper,
@@ -22,25 +23,25 @@ func NewReplicaSetObserver(reader reader.ObserverReader, mapper meta.RESTMapper,
 	}
 }
 
-type ReplicaSetObserver struct {
+type replicaSetObserver struct {
 	BaseObserver
 
-	PodObserver *PodObserver
+	PodObserver ResourceObserver
 }
 
-func (r *ReplicaSetObserver) Observe(ctx context.Context, identifier wait.ResourceIdentifier) *common.ObservedResource {
+func (r *replicaSetObserver) Observe(ctx context.Context, identifier wait.ResourceIdentifier) *common.ObservedResource {
 	rs, observedResource := r.LookupResource(ctx, identifier)
 	if observedResource != nil {
 		return observedResource
 	}
-	return r.ObserveReplicaSet(ctx, rs)
+	return r.ObserveObject(ctx, rs)
 }
 
-func (r *ReplicaSetObserver) ObserveReplicaSet(ctx context.Context, rs *unstructured.Unstructured) *common.ObservedResource {
-	identifier := r.ToIdentifier(rs)
+func (r *replicaSetObserver) ObserveObject(ctx context.Context, rs *unstructured.Unstructured) *common.ObservedResource {
+	identifier := toIdentifier(rs)
 
 	namespace := common.GetNamespaceForNamespacedResource(rs)
-	selector, err := r.ToSelector(rs, "spec", "selector")
+	selector, err := toSelector(rs, "spec", "selector")
 	if err != nil {
 		return &common.ObservedResource{
 			Identifier: identifier,
@@ -65,7 +66,7 @@ func (r *ReplicaSetObserver) ObserveReplicaSet(ctx context.Context, rs *unstruct
 	var observedPods common.ObservedResources
 	for i := range podList.Items {
 		pod := podList.Items[i]
-		observedPod := r.PodObserver.ObservePod(ctx, &pod)
+		observedPod := r.PodObserver.ObserveObject(ctx, &pod)
 		observedPods = append(observedPods, observedPod)
 	}
 	sort.Sort(observedPods)

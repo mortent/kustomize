@@ -16,11 +16,14 @@ func NewDefaultObserver(reader reader.ObserverReader, mapper meta.RESTMapper) *D
 			Reader: reader,
 			Mapper: mapper,
 		},
+		computeStatusFunc: status.Compute,
 	}
 }
 
 type DefaultObserver struct {
 	BaseObserver
+
+	computeStatusFunc computeStatusFunc
 }
 
 func (d *DefaultObserver) Observe(ctx context.Context, identifier wait.ResourceIdentifier) *common.ObservedResource {
@@ -28,25 +31,25 @@ func (d *DefaultObserver) Observe(ctx context.Context, identifier wait.ResourceI
 	if observedResource != nil {
 		return observedResource
 	}
-	return d.ObserveResource(ctx, u)
+	return d.ObserveObject(ctx, u)
 }
 
-func (d *DefaultObserver) ObserveResource(_ context.Context, resource *unstructured.Unstructured) *common.ObservedResource {
-	identifier := d.ToIdentifier(resource)
+func (d *DefaultObserver) ObserveObject(_ context.Context, resource *unstructured.Unstructured) *common.ObservedResource {
+	identifier := toIdentifier(resource)
 
-	res, err := status.Compute(resource)
+	res, err := d.computeStatusFunc(resource)
 	if err != nil {
 		return &common.ObservedResource{
 			Identifier: identifier,
-			Status: status.UnknownStatus,
-			Error: err,
+			Status:     status.UnknownStatus,
+			Error:      err,
 		}
 	}
 
 	return &common.ObservedResource{
 		Identifier: identifier,
-		Status: res.Status,
-		Resource: resource,
-		Message: res.Message,
+		Status:     res.Status,
+		Resource:   resource,
+		Message:    res.Message,
 	}
 }

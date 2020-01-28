@@ -18,7 +18,7 @@ type ObservedResource struct {
 
 	Message string
 
-	GeneratedResources []*ObservedResource
+	GeneratedResources ObservedResources
 }
 
 type ObservedResources []*ObservedResource
