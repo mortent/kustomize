@@ -231,6 +231,19 @@ func (s *Set) set(field *yaml.RNode, ext *CliExtension, sch *spec.Schema) (bool,
 		return true, nil
 	}
 
+	// If we don't know the desired type of the value we are setting,
+	// verify that the value is valid for the tag of the node.
+	if len(sch.Type) == 0 {
+		isValid, err := yaml.ValidValueForTag(ext.Setter.Value, field.YNode().Tag)
+		if err != nil {
+			return false, errors.Wrap(err)
+		}
+		if !isValid {
+			return false, fmt.Errorf("value %q is not valid for type %q",
+				ext.Setter.Value, field.YNode().Tag)
+		}
+	}
+
 	// this has a full setter, set its value
 	field.YNode().Value = ext.Setter.Value
 

@@ -4,6 +4,7 @@
 package yaml_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -103,6 +104,126 @@ spec:
 	assert.Equal(t, expected, actual)
 }
 
+func TestValidValueForTag(t *testing.T) {
+	availableTags := []string{
+		yaml.BoolTag,
+		yaml.FloatTag,
+		yaml.NullTag,
+		yaml.IntTag,
+		yaml.StringTag,
+	}
+
+	testCases := []struct {
+		value    string
+		validTag string
+	}{
+		{
+			value:    "Y",
+			validTag: yaml.BoolTag,
+		},
+		{
+			value:    "NO",
+			validTag: yaml.BoolTag,
+		},
+		{
+			value:    "True",
+			validTag: yaml.BoolTag,
+		},
+		{
+			value:    "on",
+			validTag: yaml.BoolTag,
+		},
+		{
+			value:    "6.8523015e+5",
+			validTag: yaml.FloatTag,
+		},
+		{
+			value:    "685.230_15e+03",
+			validTag: yaml.FloatTag,
+		},
+		{
+			value:    "685_230.15",
+			validTag: yaml.FloatTag,
+		},
+		{
+			value:    "190:20:30.15",
+			validTag: yaml.FloatTag,
+		},
+		{
+			value:    "-.inf",
+			validTag: yaml.FloatTag,
+		},
+		{
+			value:    ".NaN",
+			validTag: yaml.FloatTag,
+		},
+		{
+			value:    "~",
+			validTag: yaml.NullTag,
+		},
+		{
+			value:    "null",
+			validTag: yaml.NullTag,
+		},
+		{
+			value:    "685230",
+			validTag: yaml.IntTag,
+		},
+		{
+			value:    "+685_230",
+			validTag: yaml.IntTag,
+		},
+		{
+			value:    "02472256",
+			validTag: yaml.IntTag,
+		},
+		{
+			value:    "0x_0A_74_AE",
+			validTag: yaml.IntTag,
+		},
+		{
+			value:    "0b1010_0111_0100_1010_1110",
+			validTag: yaml.IntTag,
+		},
+		{
+			value:    "190:20:30",
+			validTag: yaml.IntTag,
+		},
+		{
+			value:    "yaml",
+			validTag: yaml.StringTag,
+		},
+		{
+			value:    "12abc",
+			validTag: yaml.StringTag,
+		},
+	}
+
+	for i := range testCases {
+		test := testCases[i]
+		for i := range availableTags {
+			tag := availableTags[i]
+			name := fmt.Sprintf("value: %s, tag: %s", test.value, tag)
+			t.Run(name, func(t *testing.T) {
+				isValid, err := yaml.ValidValueForTag(test.value, tag)
+				if !assert.NoError(t, err) {
+					t.FailNow()
+				}
+				// All values are valid strings.
+				if tag == yaml.StringTag {
+					assert.True(t, isValid)
+					return
+				}
+				if test.validTag == tag {
+					assert.True(t, isValid)
+				} else {
+					assert.False(t, isValid)
+				}
+			})
+		}
+	}
+}
+
 // valueToTagMap is a map of values interpreted as non-strings in yaml 1.1 when left
 // unquoted.
 // To keep compatibility with the yaml parser used by Kubernetes (yaml 1.1) make sure the values
@@ -114,7 +235,7 @@ var valueToTagMap = func() map[string]string {
 	// https://yaml.org/type/null.html
 	values := []string{"~", "null", "Null", "NULL"}
 	for i := range values {
-		val[values[i]] = "!!null"
+		val[values[i]] = yaml.NullTag
 	}
 
 	// https://yaml.org/type/bool.html
@@ -122,7 +243,7 @@ var valueToTagMap = func() map[string]string {
 		"y", "Y", "yes", "Yes", "YES", "true", "True", "TRUE", "on", "On", "ON", "n", "N", "no",
 		"No", "NO", "false", "False", "FALSE", "off", "Off", "OFF"}
 	for i := range values {
-		val[values[i]] = "!!bool"
+		val[values[i]] = yaml.BoolTag
 	}
 
 	// https://yaml.org/type/float.html
@@ -130,7 +251,7 @@ var valueToTagMap = func() map[string]string {
 		".nan", ".NaN", ".NAN", ".inf", ".Inf", ".INF",
 		"+.inf", "+.Inf", "+.INF", "-.inf", "-.Inf", "-.INF"}
 	for i := range values {
-		val[values[i]] = "!!float"
+		val[values[i]] = yaml.FloatTag
 	}
 
 	return val

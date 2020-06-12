@@ -16,12 +16,13 @@ import (
 
 func TestSet_Filter(t *testing.T) {
 	var tests = []struct {
-		name        string
-		description string
-		setter      string
-		openapi     string
-		input       string
-		expected    string
+		name             string
+		description      string
+		setter           string
+		openapi          string
+		input            string
+		expected         string
+		expectedErrorMsg string
 	}{
 		{
 			name:   "set-replicas",
@@ -153,6 +154,29 @@ metadata:
   annotations:
     foo: 4 # {"$ref": "#/definitions/io.k8s.cli.setters.foo"}
  `,
+		},
+		{
+			name:        "set-foo-different-than-existing-type",
+			description: "if a type is not specified, return error if value is not valid for existing type",
+			setter:      "foo",
+			openapi: `
+openAPI:
+  definitions:
+    io.k8s.cli.setters.foo:
+      x-k8s-cli:
+        setter:
+          name: foo
+          value: "bar"
+ `,
+			input: `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+  annotations:
+    foo: 3 # {"$ref": "#/definitions/io.k8s.cli.setters.foo"}
+ `,
+			expectedErrorMsg: "value \"bar\" is not valid for type \"!!int\"",
 		},
 		{
 			name:   "set-replicas-enum",
@@ -685,6 +709,13 @@ spec:
 			// invoke the setter
 			instance := &Set{Name: test.setter}
 			result, err := instance.Filter(r)
+			if test.expectedErrorMsg != "" {
+				if !assert.Error(t, err) {
+					t.FailNow()
+				}
+				assert.Contains(t, test.expectedErrorMsg, err.Error())
+				return
+			}
 			if !assert.NoError(t, err) {
 				t.FailNow()
 			}

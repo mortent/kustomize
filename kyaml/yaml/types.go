@@ -595,6 +595,8 @@ const (
 	StringTag = "!!str"
 	BoolTag   = "!!bool"
 	IntTag    = "!!int"
+	FloatTag  = "!!float"
+	NullTag   = "!!null"
 )
 
 // Elements returns the list of elements in the RNode.

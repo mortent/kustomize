@@ -4,12 +4,15 @@
 package yaml
 
 import (
+	"fmt"
 	"reflect"
+	"regexp"
 	"strings"
 
 	"github.com/go-openapi/spec"
 	y1_1 "gopkg.in/yaml.v2"
 	y1_2 "gopkg.in/yaml.v3"
+	"sigs.k8s.io/kustomize/kyaml/errors"
 )
 
 // typeToTag maps OpenAPI schema types to yaml 1.2 tags
@@ -90,3 +93,58 @@ func IsValueNonString(value string) bool {
 }
 
 var stringType = reflect.TypeOf("string")
+
+// ValidValueForTag checks whether the given value is valid for the provided
+// yaml tag.
+func ValidValueForTag(value, tag string) (bool, error) {
+	var regexps []string
+	switch tag {
+	case BoolTag:
+		// Regexps from https://yaml.org/type/bool.html
+		regexps = []string{
+			`^(y|Y|yes|Yes|YES|n|N|no|No|NO|true|True|TRUE)$`,
+			`^(false|False|FALSE|on|On|ON|off|Off|OFF)$`,
+		}
+	case FloatTag:
+		// Regexps from https://yaml.org/type/float.html
+		regexps = []string{
+			`^([-+]?([0-9][0-9_]*)?\.[0-9._]*([eE][-+][0-9]+)?)$`,
+			`^([-+]?[0-9][0-9_]*(:[0-5]?[0-9])+\.[0-9_]*)$`,
+			`^([-+]?\.(inf|Inf|INF))$`,
+			`^(\.(nan|NaN|NAN))$`,
+		}
+	case NullTag:
+		// Regexps from https://yaml.org/type/null.html
+		regexps = []string{`^(~|null|Null|NULL)$`}
+	case IntTag:
+		// Regexps from https://yaml.org/type/int.html
+		regexps = []string{
+			`^([-+]?0b[0-1_]+)$`,
+			`^([-+]?0[0-7_]+)$`,
+			`^([-+]?(0|[1-9][0-9_]*))$`,
+			`^([-+]?0x[0-9a-fA-F_]+)$`,
+			`^([-+]?[1-9][0-9_]*(:[0-5]?[0-9])+)$`,
+		}
+	case StringTag:
+		return true, nil
+	default:
+		return false, fmt.Errorf("unknown tag value: %s", tag)
+	}
+	return matchesRegex(value, regexps)
+}
+
+// matchesRegex checks whether the given value matches any of the provided
+// regexp expressions. If at least one matches, this function will return
+// true.
+func matchesRegex(val string, regexps []string) (bool, error) {
+	for _, re := range regexps {
+		match, err := regexp.MatchString(re, val)
+		if err != nil {
+			return false, errors.Wrap(err)
+		}
+		if match {
+			return true, nil
+		}
+	}
+	return false, nil
+}
