@@ -18,7 +18,7 @@ require (
 	// TODO: Fix this -- this should depend on v0.0.0 and be replaced (below),
 	// however the cli-runtime dependency causes `go mod` to set this as the
 	// dependency.
-	sigs.k8s.io/kustomize/kyaml v0.1.13 // Don't change this!
+	sigs.k8s.io/kustomize/kyaml v0.3.0 // Don't change this!
 )
 
 // TODO: Fix this -- we sould only depend on v0.0.0 and replace that one.
@@ -32,5 +32,5 @@ require (
 // to the kyaml version specified in releasing/VERSIONS
 replace (
 	sigs.k8s.io/kustomize/kyaml v0.0.0 => ../../kyaml
-	sigs.k8s.io/kustomize/kyaml v0.1.13 => ../../kyaml
+	sigs.k8s.io/kustomize/kyaml v0.3.0 => ../../kyaml
 )
