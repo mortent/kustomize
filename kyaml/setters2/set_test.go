@@ -730,6 +730,61 @@ metadata:
     foo: true # {"$ref": "#/definitions/io.k8s.cli.setters.foo"}
  `,
 		},
+		{
+			name:        "set-empty-field-with-implicit-namespace-setter",
+			description: "sets namespace even if field doesn't exist",
+			setter:      "krm.namespace",
+			openapi: `
+openAPI:
+ definitions:
+   io.k8s.cli.setters.krm.namespace:
+     x-k8s-cli:
+       setter:
+         name: krm.namespace
+         value: "foo"
+`,
+			input: `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+`,
+			expected: `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+  namespace: foo
+`,
+		},
+		{
+			name:        "set-existing-field-with-implicit-namespace-setter",
+			description: "sets namespace without setter when field exists",
+			setter:      "krm.namespace",
+			openapi: `
+openAPI:
+ definitions:
+   io.k8s.cli.setters.krm.namespace:
+     x-k8s-cli:
+       setter:
+         name: krm.namespace
+         value: "foo"
+`,
+			input: `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+  namespace: bar
+`,
+			expected: `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+  namespace: foo
+`,
+		},
 	}
 	for i := range tests {
 		test := tests[i]

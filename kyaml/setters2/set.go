@@ -117,6 +117,18 @@ func (s *Set) visitScalar(object *yaml.RNode, p string, oa, setterSchema *openap
 	return nil
 }
 
+func (s *Set) visitEmpty(parent *yaml.RNode, field, parentPath string, oa, setterSchema *openapi.ResourceSchema) error {
+	if setterSchema == nil {
+		return nil
+	}
+	fieldNode, err := parent.Pipe(yaml.LookupCreate(yaml.ScalarNode, field))
+	if err != nil {
+		return err
+	}
+
+	return s.visitScalar(fieldNode, parentPath+"."+field, oa, setterSchema)
+}
+
 // substitute updates the value of field from ext if ext contains a substitution that
 // depends on a setter whose name matches s.Name.
 func (s *Set) substitute(field *yaml.RNode, ext *CliExtension) (bool, error) {

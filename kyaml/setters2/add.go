@@ -112,6 +112,10 @@ func (a *Add) visitScalar(object *yaml.RNode, p string, _, _ *openapi.ResourceSc
 	return a.addRef(object)
 }
 
+func (a *Add) visitEmpty(_ *yaml.RNode, _, _ string, _, _ *openapi.ResourceSchema) error {
+	return nil
+}
+
 // addRef adds the setter/subst ref to the object node as a line comment
 func (a *Add) addRef(object *yaml.RNode) error {
 	// read the field metadata

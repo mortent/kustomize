@@ -43,6 +43,10 @@ func (d *Delete) visitMapping(_ *yaml.RNode, _ string, _ *openapi.ResourceSchema
 	return nil
 }
 
+func (d *Delete) visitEmpty(_ *yaml.RNode, _, _ string, _, _ *openapi.ResourceSchema) error {
+	return nil
+}
+
 // visitScalar implements visitor
 // visitScalar will remove the reference on each scalar field whose name matches.
 func (d *Delete) visitScalar(object *yaml.RNode, p string, _, _ *openapi.ResourceSchema) error {

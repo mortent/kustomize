@@ -4,6 +4,9 @@
 package setters2
 
 import (
+	"fmt"
+
+	"github.com/go-openapi/spec"
 	"sigs.k8s.io/kustomize/kyaml/fieldmeta"
 	"sigs.k8s.io/kustomize/kyaml/openapi"
 	"sigs.k8s.io/kustomize/kyaml/yaml"
@@ -16,7 +19,7 @@ type visitor interface {
 	// node is the scalar field value
 	// path is the path to the field; path elements are separated by '.'
 	// oa is the OpenAPI schema for the field
-	visitScalar(node *yaml.RNode, path string, oa *openapi.ResourceSchema, fieldOA *openapi.ResourceSchema) error
+	visitScalar(node *yaml.RNode, path string, oa, fieldOA *openapi.ResourceSchema) error
 
 	// visitSequence is called for each sequence field value on a resource
 	// node is the sequence field value
@@ -29,6 +32,8 @@ type visitor interface {
 	// path is the path to the field
 	// oa is the OpenAPI schema for the field
 	visitMapping(node *yaml.RNode, path string, oa *openapi.ResourceSchema) error
+
+	visitEmpty(parent *yaml.RNode, field, parentPath string, oa, fieldOA *openapi.ResourceSchema) error
 }
 
 // accept invokes the appropriate function on v for each field in object
@@ -40,6 +45,43 @@ func accept(v visitor, object *yaml.RNode) error {
 
 // acceptImpl implements accept using recursion
 func acceptImpl(v visitor, object *yaml.RNode, p string, oa *openapi.ResourceSchema) error {
+	if object.YNode().Kind == yaml.MappingNode && !oa.IsEmpty() {
+		for field := range oa.Schema.Properties {
+			schema := oa.Schema.Properties[field]
+			if schema.Ref.String() != "" {
+				s, err := openapi.Resolve(&schema.Ref)
+				if err == nil && s != nil {
+					schema = *s
+				}
+			}
+
+			node, err := object.Pipe(yaml.Lookup(field))
+			if err != nil {
+				return err
+			}
+
+			// If exists we do nothing. It will be visited during the
+			// walk of the yaml doc.
+			if node != nil {
+				continue
+			}
+			// We only consider fields.
+			if schema.Type.Contains("object") || schema.Type.Contains("array") {
+				continue
+			}
+
+			oa := &openapi.ResourceSchema{
+				Schema: &schema,
+			}
+
+			fieldOA := getSchema(nil, oa, field)
+
+			if err := v.visitEmpty(object, field, p, oa, fieldOA); err != nil {
+				return err
+			}
+		}
+	}
+
 	switch object.YNode().Kind {
 	case yaml.DocumentNode:
 		// Traverse the child of the document
@@ -81,6 +123,19 @@ func acceptImpl(v visitor, object *yaml.RNode, p string, oa *openapi.ResourceSch
 // s is the provided schema for the field if known
 // field is the name of the field
 func getSchema(r *yaml.RNode, s *openapi.ResourceSchema, field string) *openapi.ResourceSchema {
+	ref, err := spec.NewRef(fmt.Sprintf("#/definitions/io.k8s.cli.setters.krm.%s", field))
+	if err == nil {
+		s, err := openapi.Resolve(&ref)
+		if err == nil && s != nil {
+			return &openapi.ResourceSchema{
+				Schema: s,
+			}
+		}
+	}
+	if r == nil {
+		return nil
+	}
+
 	// get the override schema if it exists on the field
 	fm := fieldmeta.FieldMeta{}
 	if err := fm.Read(r); err == nil && !fm.IsEmpty() {
