@@ -10,7 +10,8 @@ var mapTestCases = []testCase{
 	{
 		description: `Add the annotations map field`,
 		origin: `
-kind: Deployment`,
+kind: Deployment
+`,
 		update: `
 kind: Deployment
 metadata:
@@ -18,12 +19,15 @@ metadata:
     d: e # add these annotations
 `,
 		local: `
-kind: Deployment`,
+kind: Deployment
+`,
 		expected: `
 kind: Deployment
 metadata:
   annotations:
-    d: e # add these annotations`},
+    d: e # add these annotations
+`,
+	},
 
 	//
 	// Test Case
@@ -34,24 +38,29 @@ metadata:
 kind: Deployment
 metadata:
   annotations:
-    a: b`,
+    a: b
+`,
 		update: `
 kind: Deployment
 metadata:
   annotations:
     a: b
-    d: e  # add these annotations`,
+    d: e  # add these annotations
+`,
 		local: `
 kind: Deployment
 metadata:
   annotations:
-    g: h  # keep these annotations`,
+    g: h  # keep these annotations
+`,
 		expected: `
 kind: Deployment
 metadata:
   annotations:
     g: h # keep these annotations
-    d: e # add these annotations`},
+    d: e # add these annotations
+`,
+  	},
 
 	//
 	// Test Case
@@ -62,20 +71,25 @@ metadata:
 kind: Deployment
 metadata:
   annotations:
-    a: b # ignored because unchanged`,
+    a: b # ignored because unchanged
+`,
 		update: `
 kind: Deployment
 metadata:
   annotations:
     a: b # ignored because unchanged
-    d: e`,
+    d: e
+`,
 		local: `
-kind: Deployment`,
+kind: Deployment
+`,
 		expected: `
 kind: Deployment
 metadata:
   annotations:
-    d: e`},
+    d: e
+`,
+	},
 
 	//
 	// Test Case
@@ -87,24 +101,37 @@ kind: Deployment
 metadata:
   annotations:
     a: b
-    d: c`,
+    d: c
+`,
 		update: `
 kind: Deployment
 metadata:
   annotations:
     a: b
-    d: e  # set these annotations`,
+    d: e  # set these annotations
+`,
 		local: `
 kind: Deployment
 metadata:
   annotations:
-    g: h  # keep these annotations`,
-		expected: `
+    g: h  # keep these annotations
+`,
+  	expectedForStrategy: map[string]string{
+			takeUpdateStrategy: `
 kind: Deployment
 metadata:
   annotations:
     g: h # keep these annotations
-    d: e # set these annotations`},
+    d: e # set these annotations
+`,
+			takeLocalStrategy: `
+kind: Deployment
+metadata:
+  annotations:
+    g: h # keep these annotations
+`,
+		},
+	},
 
 	//
 	// Test Case
@@ -115,20 +142,25 @@ metadata:
 kind: Deployment
 metadata:
   annotations:
-    a: b # ignored because unchanged`,
+    a: b # ignored because unchanged
+`,
 		update: `
 kind: Deployment
 metadata:
   annotations:
     a: b # ignored because unchanged
-    d: e`,
+    d: e
+`,
 		local: `
-kind: Deployment`,
+kind: Deployment
+`,
 		expected: `
 kind: Deployment
 metadata:
   annotations:
-    d: e`},
+    d: e
+`,
+	},
 
 	//
 	// Test Case
@@ -140,25 +172,30 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    a: b`,
+    a: b
+`,
 		update: `
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations: {}`,
+  annotations: {}
+`,
 		local: `
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
     c: d
-    a: b`,
+    a: b
+`,
 		expected: `
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    c: d`},
+    c: d
+`,
+	},
 
 	//
 	// Test Case
@@ -170,25 +207,30 @@ metadata:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: foo`,
+  name: foo
+`,
 		update: `
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: foo
-  annotations: null`,
+  annotations: null
+`,
 		local: `
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: foo
   annotations:
-    a: b`,
+    a: b
+`,
 		expected: `
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: foo`},
+  name: foo
+`,
+	},
 
 	//
 	// Test Case
@@ -200,23 +242,28 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    a: b`,
+    a: b
+`,
 		update: `
 apiVersion: apps/v1
-kind: Deployment`,
+kind: Deployment
+`,
 		local: `
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
     c: d
-    a: b`,
+    a: b
+`,
 		expected: `
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    c: d`},
+    c: d
+`,
+	},
 
 	//
 	// Test Case
@@ -228,21 +275,25 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    a: b`,
+    a: b
+`,
 		update: `
 apiVersion: apps/v1
-kind: Deployment`,
+kind: Deployment
+`,
 		local: `
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: foo`,
+  name: foo
+`,
 		expected: `
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: foo
-`},
+`,
+	},
 
 	//
 	// Test Case
@@ -254,24 +305,29 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    a: b`,
+    a: b
+`,
 		update: `
 apiVersion: apps/v1
-kind: Deployment`,
+kind: Deployment
+`,
 		local: `
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: foo
   annotations:
-    foo: bar # keep this annotation even though the parent field was removed`,
+    foo: bar # keep this annotation even though the parent field was removed
+`,
 		expected: `
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: foo
   annotations:
-    foo: bar # keep this annotation even though the parent field was removed`},
+    foo: bar # keep this annotation even though the parent field was removed
+`,
+	},
 
 	//
 	// Test Case
@@ -305,5 +361,89 @@ kind: Deployment
 metadata:
   name: foo
   annotations: {}
-`},
+`,
+	},
+
+	//
+	// Test Case
+	//
+	{
+		description: `line comments`,
+		origin: `
+apiVersion: apps/v1
+kind: Deployment 
+metadata: # origin
+  name: foo
+`,
+		update: `
+apiVersion: apps/v1
+kind: Deployment
+metadata: # update
+  name: foo
+`,
+		local: `
+apiVersion: apps/v1
+kind: Deployment
+metadata: # local
+  name: foo
+`,
+		expectedForStrategy: map[string]string{
+			takeUpdateStrategy: `
+apiVersion: apps/v1
+kind: Deployment
+metadata: # update
+  name: foo
+`,
+			takeLocalStrategy: `
+apiVersion: apps/v1
+kind: Deployment
+metadata: # local
+  name: foo
+`,
+		},
+	},
+
+	//
+	// Test Case
+	//
+	{
+		description: `head comments`,
+		origin: `
+apiVersion: apps/v1
+kind: Deployment
+# origin
+metadata:
+  name: foo
+`,
+		update: `
+apiVersion: apps/v1
+kind: Deployment
+# update
+metadata:
+  name: foo
+`,
+		local: `
+apiVersion: apps/v1
+kind: Deployment
+# local
+metadata:
+  name: foo
+`,
+		expectedForStrategy: map[string]string{
+			takeUpdateStrategy: `
+apiVersion: apps/v1
+kind: Deployment
+# update
+metadata:
+  name: foo
+`,
+			takeLocalStrategy: `
+apiVersion: apps/v1
+kind: Deployment
+# local
+metadata:
+  name: foo
+`,
+		},
+	},
 }

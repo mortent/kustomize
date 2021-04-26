@@ -10,16 +10,18 @@ import (
 	"sigs.k8s.io/kustomize/kyaml/yaml/walk"
 )
 
-func Merge(dest, original, update *yaml.RNode) (*yaml.RNode, error) {
+func Merge(dest, original, update *yaml.RNode, resolver ConflictResolver) (*yaml.RNode, error) {
 	// if update == nil && original != nil => declarative deletion
 
 	return walk.Walker{
-		Visitor:            Visitor{},
+		Visitor:            Visitor{
+			ConflictResolver: resolver,
+		},
 		VisitKeysAsScalars: true,
 		Sources:            []*yaml.RNode{dest, original, update}}.Walk()
 }
 
-func MergeStrings(dest, original, update string, infer bool) (string, error) {
+func MergeStrings(dest, original, update string, infer bool, conflictResolver ConflictResolver) (string, error) {
 	srcOriginal, err := yaml.Parse(original)
 	if err != nil {
 		return "", err
@@ -35,7 +37,9 @@ func MergeStrings(dest, original, update string, infer bool) (string, error) {
 
 	result, err := walk.Walker{
 		InferAssociativeLists: infer,
-		Visitor:               Visitor{},
+		Visitor:               Visitor{
+			ConflictResolver: conflictResolver,
+		},
 		VisitKeysAsScalars:    true,
 		Sources:               []*yaml.RNode{d, srcOriginal, srcUpdated}}.Walk()
 	if err != nil {

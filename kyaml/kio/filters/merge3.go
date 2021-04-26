@@ -5,6 +5,7 @@ package filters
 
 import (
 	"fmt"
+	"sigs.k8s.io/kustomize/kyaml/yaml/merge3/resolvers"
 
 	"sigs.k8s.io/kustomize/kyaml/kio"
 	"sigs.k8s.io/kustomize/kyaml/kio/kioutil"
@@ -37,6 +38,7 @@ type Merge3 struct {
 	DestPath       string
 	MatchFilesGlob []string
 	Matcher        ResourceMatcher
+	ConflictResolver merge3.ConflictResolver
 }
 
 func (m Merge3) Merge() error {
@@ -78,7 +80,14 @@ func (m Merge3) Filter(nodes []*yaml.RNode) ([]*yaml.RNode, error) {
 	if matcher == nil {
 		matcher = &DefaultGVKNNMatcher{MergeOnPath: true}
 	}
-	tl := tuples{matcher: matcher}
+	resolver := m.ConflictResolver
+	if m.ConflictResolver == nil {
+		resolver = &resolvers.TakeUpdateConflictResolver{}
+	}
+	tl := tuples{
+		matcher: matcher,
+		conflictResolver: resolver,
+	}
 	for i := range nodes {
 		if err := tl.add(nodes[i]); err != nil {
 			return nil, err
@@ -104,7 +113,7 @@ func (m Merge3) Filter(nodes []*yaml.RNode) ([]*yaml.RNode, error) {
 			// don't include the resource in the output
 		default:
 			// dest and updated are non-nil -- merge them
-			node, err := t.merge()
+			node, err := t.merge(resolver)
 			if err != nil {
 				return nil, err
 			}
@@ -122,6 +131,8 @@ type tuples struct {
 
 	// matcher matches the resources for merge
 	matcher ResourceMatcher
+
+	conflictResolver merge3.ConflictResolver
 }
 
 // DefaultGVKNNMatcher holds the default matching of resources implementation based on
@@ -237,8 +248,8 @@ func (t *tuple) add(node *yaml.RNode) error {
 }
 
 // merge performs a 3-way merge on the tuple
-func (t *tuple) merge() (*yaml.RNode, error) {
-	return merge3.Merge(t.dest, t.original, t.updated)
+func (t *tuple) merge(resolver merge3.ConflictResolver) (*yaml.RNode, error) {
+	return merge3.Merge(t.dest, t.original, t.updated, resolver)
 }
 
 // duplicateError returns duplicate resources error

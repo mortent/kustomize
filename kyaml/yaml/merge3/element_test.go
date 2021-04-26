@@ -51,9 +51,10 @@ spec:
       containers:
       - name: foo
         image: foo:1
-      - image: baz:2
-        name: baz
-`},
+      - name: baz
+        image: baz:2
+`,
+	},
 
 	//
 	// Test Case
@@ -84,15 +85,20 @@ spec:
   template:
     spec:
       containers:
-      - image: foo:bar
-        name: foo
-`},
+      - name: foo
+        image: foo:bar
+`,
+	},
 
+	//
+	// Test Case
+	//
 	{
 		description: `Add an element to a non-existing list, existing in dest`,
 		origin: `
 apiVersion: apps/v1
-kind: Deployment`,
+kind: Deployment
+`,
 		update: `
 apiVersion: apps/v1
 kind: Deployment
@@ -122,9 +128,10 @@ spec:
       containers:
       - name: baz
         image: baz:bar
-      - image: foo:bar
-        name: foo
-`},
+      - name: foo
+        image: foo:bar
+`,
+	},
 
 	//
 	// Test Case
@@ -140,7 +147,8 @@ spec:
     spec:
       containers:
       - name: foo
-        image: foo:bar`,
+        image: foo:bar
+`,
 		update: `
 apiVersion: apps/v1
 kind: Deployment
@@ -157,7 +165,8 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 `,
-		expected: `
+		expectedForStrategy: map[string]string{
+			takeUpdateStrategy: `
 apiVersion: apps/v1
 kind: Deployment
 spec:
@@ -167,7 +176,69 @@ spec:
       - command:
         - run.sh
         name: foo
-`},
+`,
+        	takeLocalStrategy: `
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec: {}
+`,
+		},
+	},
+
+	//
+	// Test Case
+	//
+	{
+		description: `Add a field to the element, element missing from updated`,
+		origin: `
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      containers:
+      - name: foo
+        image: foo:bar
+`,
+		update: `
+apiVersion: apps/v1
+kind: Deployment
+`,
+		local: `
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      containers:
+      - name: foo
+        image: foo:bar
+        command:
+        - run.sh
+`,
+		expectedForStrategy: map[string]string{
+			takeUpdateStrategy: `
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec: {}
+`,
+			takeLocalStrategy: `
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      containers:
+      - command:
+        - run.sh
+        name: foo
+`,
+		},
+	},
 
 	//
 	// Test Case
@@ -202,7 +273,8 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 `,
-		expected: `
+		expectedForStrategy: map[string]string{
+			takeUpdateStrategy: `
 apiVersion: apps/v1
 kind: Deployment
 spec:
@@ -212,7 +284,16 @@ spec:
       - command:
         - run2.sh
         name: foo
-`},
+`,
+			takeLocalStrategy: `
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec: {}
+`,
+		},
+	},
 
 	//
 	// Test Case
@@ -262,12 +343,14 @@ spec:
       - name: foo
         image: foo:bar
         command: ['run2.sh']
-`},
+`,
+	},
 
 	//
 	// Test Case
 	//
-	{description: `Add a field on the elem, element present in the dest`,
+	{
+		description: `Add a field on the elem, element present in the dest`,
 		origin: `
 apiVersion: apps/v1
 kind: Deployment
@@ -309,7 +392,8 @@ spec:
       - name: foo
         image: foo:bar
         command: ['run2.sh']
-`},
+`,
+	},
 
 	//
 	// Test Case
@@ -348,7 +432,8 @@ spec:
         image: foo:bar
         command: ['run.sh']
 `,
-		expected: `
+		expectedForStrategy: map[string]string{
+			takeUpdateStrategy: `
 apiVersion: apps/v1
 kind: Deployment
 spec:
@@ -358,7 +443,20 @@ spec:
       - name: foo
         image: foo:bar
         command: ['run2.sh']
-`},
+`,
+       	takeLocalStrategy: `
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      containers:
+      - name: foo
+        image: foo:bar
+        command: ['run.sh']
+`,
+		},
+	},
 
 	//
 	// Test Case
@@ -400,7 +498,8 @@ spec:
       containers:
       - name: foo
         image: foo:bar
-`},
+`,
+	},
 
 	//
 	// Test Case
@@ -428,7 +527,8 @@ kind: Deployment
 		expected: `
 apiVersion: apps/v1
 kind: Deployment
-`},
+`,
+	},
 
 	//
 	// Test Case
@@ -462,13 +562,26 @@ spec:
       - name: foo
         image: foo:bar
 `,
-		expected: `
+		expectedForStrategy: map[string]string{
+			takeUpdateStrategy: `
 apiVersion: apps/v1
 kind: Deployment
 spec:
   template:
     spec: {}
-`},
+`,
+		// TODO(mortent): See if we can do better here. Ideally the containers
+		// field should not be included here.
+			takeLocalStrategy: `
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      containers: []
+`,
+		},
+	},
 
 	//
 	// Test Case
@@ -503,13 +616,26 @@ spec:
         image: foo:bar
         command: ['run.sh']
 `,
-		expected: `
+		expectedForStrategy: map[string]string{
+			takeUpdateStrategy: `
 apiVersion: apps/v1
 kind: Deployment
 spec:
   template:
     spec: {}
-`},
+`,
+    		takeLocalStrategy: `
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      containers:
+      - command: ['run.sh']
+        name: foo
+`,
+		},
+	},
 
 	//
 	// Test Case
@@ -561,7 +687,8 @@ spec:
       - name: foo
         image: foo:bar
         command: ['run.sh']
-`},
+`,
+	},
 
 	//
 	// Test Case
@@ -603,7 +730,8 @@ kind: Deployment
 spec:
   template:
     spec: {}
-`},
+`,
+	},
 
 	//
 	// Test Case
@@ -638,13 +766,28 @@ spec:
         image: foo:bar
         command: ['run.sh']
 `,
-		expected: `
+		expectedForStrategy: map[string]string{
+			takeUpdateStrategy: `
 apiVersion: apps/v1
 kind: Deployment
 spec:
   template:
     spec: {}
-`},
+`,
+    	// TODO(mortent): See if we can do better here. Both making sure the
+    	// merge key comes first and avoid the missing `image` property.
+			takeLocalStrategy: `
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      containers:
+      - command: ['run.sh']
+        name: foo
+`,
+		},
+	},
 
 	//
 	// Test Case
@@ -976,7 +1119,8 @@ spec:
         ports:
         - containerPort: 8080
         - containerPort: 80
-`},
+`,
+	},
 
 	//
 	// Test Case
@@ -985,7 +1129,8 @@ spec:
 		description: `Add a containerPort to a non-existing list, existing in dest`,
 		origin: `
 apiVersion: apps/v1
-kind: Deployment`,
+kind: Deployment
+`,
 		update: `
 apiVersion: apps/v1
 kind: Deployment
@@ -1022,7 +1167,8 @@ spec:
         ports:
         - containerPort: 80
         - containerPort: 8080
-`},
+`,
+	},
 
 	//
 	// Test Case
@@ -1081,7 +1227,9 @@ spec:
         - containerPort: 8080
           name: 8080-port-update
         - containerPort: 80
-`},
+`,
+	},
+
 	//
 	// Test Case
 	//
@@ -1146,7 +1294,9 @@ spec:
         ports:
         - containerPort: 8080
           protocol: TCP
-`},
+`,
+	},
+
 	//
 	// Test Case
 	//
@@ -1213,8 +1363,12 @@ spec:
           protocol: HTTP
         - containerPort: 8080
           protocol: TCP
-`},
+`,
+	},
 
+	//
+	// Test Case
+	//
 	{
 		description: `Update container-port name`,
 		origin: `
@@ -1265,7 +1419,8 @@ spec:
           protocol: TCP
           name: foo
 `,
-		expected: `
+		expectedForStrategy: map[string]string{
+			takeUpdateStrategy: `
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -1280,7 +1435,25 @@ spec:
         - containerPort: 8080
           protocol: TCP
           name: bar
-`},
+`,
+			takeLocalStrategy: `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-deployment
+spec:
+  template:
+    spec:
+      containers:
+      - image: test-image
+        name: test-deployment
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+          name: foo
+`,
+		},
+	},
 
 	//
 	// Test Case
@@ -1342,7 +1515,8 @@ spec:
           protocol: UDP
         - containerPort: 8080
           protocol: TCP
-`},
+`,
+	},
 
 	//
 	// Test Case
@@ -1351,7 +1525,8 @@ spec:
 		description: `Add a containerPort with protocol to a non-existing list, existing in dest`,
 		origin: `
 apiVersion: apps/v1
-kind: Deployment`,
+kind: Deployment
+`,
 		update: `
 apiVersion: apps/v1
 kind: Deployment
@@ -1392,7 +1567,8 @@ spec:
           protocol: TCP
         - containerPort: 8080
           protocol: UDP
-`},
+`,
+	},
 
 	//
 	// Test Case
@@ -1472,10 +1648,14 @@ spec:
           protocol: HTTP
           name: local
         - containerPort: 8080
-          name: updated
           protocol: TCP
-`},
+          name: updated
+`,
+	},
 
+	//
+	// Test Case
+	//
 	{
 		description: `Retain local protocol`,
 		origin: `
@@ -1539,5 +1719,6 @@ spec:
           protocol: HTTP
         - containerPort: 8080
           protocol: TCP
-`},
+`,
+	},
 }

@@ -15,22 +15,27 @@ var listTestCases = []testCase{
 list:
 - 1
 - 2
-- 3`,
+- 3
+`,
 		update: `
 list:
 - 2
 - 3
-- 4`,
+- 4
+`,
 		local: `
 list:
 - 1
 - 2
-- 3`,
+- 3
+`,
 		expected: `
 list:
 - 2
 - 3
-- 4`},
+- 4
+`,
+	},
 
 	//
 	// Test Case
@@ -53,13 +58,19 @@ list: # new value
 `,
 		local: `
 apiVersion: apps/v1`,
-		expected: `
+		expectedForStrategy: map[string]string{
+			takeUpdateStrategy: `
 apiVersion: apps/v1
 list: # new value
 - 2
 - 3
 - 4
-`},
+`,
+			takeLocalStrategy: `
+apiVersion: apps/v1
+`,
+		},
+	},
 
 	//
 	// Test Case
@@ -70,22 +81,27 @@ list: # new value
 list: # comment
 - 1
 - 2
-- 3`,
+- 3
+`,
 		update: `
 list: # updated comment
 - 2
 - 3
-- 4`,
+- 4
+`,
 		local: `
 list: # comment
 - 1
 - 2
-- 3`,
+- 3
+`,
 		expected: `
 list: # updated comment
 - 2
 - 3
-- 4`},
+- 4
+`,
+	},
 
 	//
 	// Test Case
@@ -96,22 +112,35 @@ list: # updated comment
 list: # origin comment
 - 1
 - 2
-- 3`,
+- 3
+`,
 		update: `
 list: # updated comment
 - 2
 - 3
-- 4`,
+- 4
+`,
 		local: `
 list: # local comment
 - 1
 - 2
-- 3`,
-		expected: `
+- 3
+`,
+		expectedForStrategy: map[string]string{
+			takeUpdateStrategy: `
+list: # updated comment
+- 2
+- 3
+- 4
+`,
+			takeLocalStrategy: `
 list: # local comment
 - 2
 - 3
-- 4`},
+- 4
+`,
+		},
+	},
 
 	//
 	// Test Case
@@ -122,23 +151,39 @@ list: # local comment
 list: # origin comment
 - 1
 - 2
-- 3`,
+- 3
+`,
 		update: `
 list: # updated comment
 - 2
 - 3
-- 4`,
+- 4
+`,
 		local: `
 list:
 - 1
 - 2
-- 3`,
-		expected: `
+- 3
+`,
+		expectedForStrategy: map[string]string{
+			takeUpdateStrategy: `
+list: # updated comment
+- 2
+- 3
+- 4
+`,
+			takeLocalStrategy: `
 list:
 - 2
 - 3
-- 4`},
+- 4
+`,
+		},
+	},
 
+	//
+	// Test Case
+	//
 	{
 		description: `Add update with comment`,
 		origin: `
@@ -148,14 +193,18 @@ apiVersion: apps/v1
 list: # updated comment
 - 2
 - 3
-- 4`,
+- 4
+`,
 		local: `
-apiVersion: apps/v1`,
+apiVersion: apps/v1
+`,
 		expected: `
 list: # updated comment
 - 2
 - 3
-- 4`},
+- 4
+`,
+	},
 
 	//
 	// Test Case
@@ -164,10 +213,12 @@ list: # updated comment
 		description: `Add keep an omitted field`,
 		origin: `
 apiVersion: apps/v1
-kind: Deployment`,
+kind: Deployment
+`,
 		update: `
 apiVersion: apps/v1
-kind: StatefulSet`,
+kind: StatefulSet
+`,
 		local: `
 apiVersion: apps/v1
 list: # not present in sources
@@ -175,14 +226,24 @@ list: # not present in sources
 - 3
 - 4
 `,
-		expected: `
+		expectedForStrategy: map[string]string{
+			takeUpdateStrategy: `
 apiVersion: apps/v1
 list: # not present in sources
 - 2
 - 3
 - 4
 kind: StatefulSet
-`},
+`,
+			takeLocalStrategy: `
+apiVersion: apps/v1
+list: # not present in sources
+- 2
+- 3
+- 4
+`,
+		},
+	},
 
 	//
 	// Test Case
@@ -195,26 +256,39 @@ apiVersion: apps/v1
 list: # old value
 - 1
 - 2
-- 3`,
+- 3
+`,
 		update: `
 apiVersion: apps/v1
 list: # new value
 - 2
 - 3
-- 4`,
+- 4
+`,
 		local: `
 apiVersion: apps/v1
 list: # conflicting value
 - a
 - b
-- c`,
-		expected: `
+- c
+`,
+		expectedForStrategy: map[string]string{
+			takeUpdateStrategy: `
 apiVersion: apps/v1
-list: # conflicting value
+list: # new value
 - 2
 - 3
 - 4
-`},
+`,
+			takeLocalStrategy: `
+apiVersion: apps/v1
+list: # conflicting value
+- a
+- b
+- c
+`,
+		},
+	},
 
 	//
 	// Test Case
@@ -233,7 +307,8 @@ apiVersion: apps/v1
 list: # ignore value
 - 1
 - 2
-- 3`,
+- 3
+`,
 		local: `
 apiVersion: apps/v1
 list: # local comment
@@ -247,7 +322,8 @@ list: # local comment
 - 2
 - 3
 - 4
-`},
+`,
+	},
 
 	//
 	// Test Case
@@ -259,19 +335,22 @@ apiVersion: apps/v1
 list: # ignore value
 - 1
 - 2
-- 3`,
+- 3
+`,
 		update: `
 apiVersion: apps/v1
 list: # ignore value
 - 1
 - 2
-- 3`,
+- 3
+`,
 		local: `
 apiVersion: apps/v1
 `,
 		expected: `
 apiVersion: apps/v1
-`},
+`,
+	},
 
 	//
 	// Test Case
@@ -279,18 +358,23 @@ apiVersion: apps/v1
 	{
 		description: `Explicitly clear a field`,
 		origin: `
-apiVersion: apps/v1`,
+apiVersion: apps/v1
+`,
 		update: `
 apiVersion: apps/v1
-list: null # clear`,
+list: null # clear
+`,
 		local: `
 apiVersion: apps/v1
 list: # value to clear
 - 1
 - 2
-- 3`,
+- 3
+`,
 		expected: `
-apiVersion: apps/v1`},
+apiVersion: apps/v1
+`,
+	},
 
 	//
 	// Test Case
@@ -302,17 +386,22 @@ apiVersion: apps/v1
 list: # clear value
 - 1
 - 2
-- 3`,
+- 3
+`,
 		update: `
-apiVersion: apps/v1`,
+apiVersion: apps/v1
+`,
 		local: `
 apiVersion: apps/v1
 list: # old value
 - 1
 - 2
-- 3`,
+- 3
+`,
 		expected: `
-apiVersion: apps/v1`},
+apiVersion: apps/v1
+`,
+	},
 
 	//
 	// Test Case
@@ -325,15 +414,29 @@ apiVersion: apps/v1
 list: # old value
 - 1
 - 2
-- 3`,
+- 3
+`,
 		update: `
-apiVersion: apps/v1`,
+apiVersion: apps/v1
+`,
 		local: `
 apiVersion: apps/v1
 list: # old value
 - a
 - b
-- c`,
-		expected: `
-apiVersion: apps/v1`},
+- c
+`,
+		expectedForStrategy: map[string]string{
+			takeUpdateStrategy: `
+apiVersion: apps/v1
+`,
+			takeLocalStrategy: `
+apiVersion: apps/v1
+list: # old value
+- a
+- b
+- c
+`,
+		},
+	},
 }

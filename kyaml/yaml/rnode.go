@@ -28,6 +28,10 @@ func IsMissingOrNull(node *RNode) bool {
 	return node.IsNil() || node.YNode().Tag == NodeTagNull
 }
 
+func Exists(node *RNode) bool {
+	return !IsMissingOrNull(node) && !node.IsTaggedNull()
+}
+
 // IsEmptyMap returns true if the RNode is an empty node or an empty map.
 // TODO: make this a method on RNode.
 func IsEmptyMap(node *RNode) bool {
